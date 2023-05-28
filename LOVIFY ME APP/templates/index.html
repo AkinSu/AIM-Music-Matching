@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title>Find the one - loveify.me</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='index.css') }}?version=0000071"">
+        <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500&display=swap" rel="stylesheet">
+        <script type="text/javascript" src="{{ url_for('static', filename='logout.js') }}"></script>
+    </head>
+    <body onload="logoutAndRedirect()">
+        <header>
+            <a class="logo" href="/"><img src="{{ url_for('static', filename='images/lovify-me.svg') }}" alt="title-logo"></a>
+            <nav>
+                <ul class="nav__links">
+                    <li><a href= "{{ url_for('about_page') }}" >About</a></li>
+                    <li><a href="{{ url_for('compatibility_page') }}" >Compatibility</a></li>
+                    <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+                    <li><a href="/">Dashboard</a></li>
+                </ul>
+            </nav>
+            <a class="cta" href= "{{ url_for('login_redirect') }}" >Login</a>
+            <p class="menu cta">Menu</p>
+        </header>
+
+        <div class="container">
+            <img class="image" src = "{{ url_for('static', filename='images/lego.svg')}}" alt="logo">
+            <div class="text">
+                <h1>Compare your music taste with friends (or strangers!)</h1>
+                <p>
+                    Log in with Spotify to find out how compatible your music taste is with your friends. Get your code, 
+                    and share it with others to see how your taste stacks up against the rest of the world!
+                </p>
+            </div>
+            <a class="cta" href= "{{ url_for('login_redirect') }}" >Sign In With Spotify</a>
+        </div>
+
+        <div class="bottom-bar">
+            Made by Shalin Shrestha, Hillary Wong, Haniyyah Hamid, Matthew Duma, Suyesh Shrestha
+        </div>
+        
+        <div id="mobile__menu" class="overlay">
+            <a class="close">&times;</a>
+            <div class="overlay__content">
+                <li><a href=  "{{ url_for('about_page') }}" >About</a></li>
+                <li><a href=  "{{ url_for('compatibility_page') }}"  >Compatibility</a></li>
+                <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+                <li><a href="/">Dashboard</a></li>
+            </div>
+        </div>
+        <script type="text/javascript" src="{{ url_for('static', filename='mobile.js') }}"></script>
+    </body>
+</html>

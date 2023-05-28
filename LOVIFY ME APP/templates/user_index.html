@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title>Find the one - loveify.me</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='user_index.css') }}?version=0000203"">
+        <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500&display=swap" rel="stylesheet">
+        <!-- Add Font Awesome CSS -->
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+        <script type="text/javascript" src="{{ url_for('static', filename='logout.js') }}"></script>
+    </head>
+    <body onload="logoutAndRedirect()">
+        <header>
+            <a class="logo" href="/"><img src="{{ url_for('static', filename='images/lovify-me.svg') }}" alt="title-logo"></a>
+            <nav>
+                <ul class="nav__links">
+                    <li><a href= "{{ url_for('about_page') }}" >About</a></li>
+                    <li><a href="{{ url_for('compatibility_page') }}" >Compatibility</a></li>
+                    <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+                    <li><a href="/">Dashboard</a></li>
+                </ul>
+            </nav>
+            <a class="cta" href= "{{ user_uri }}" >Go to profile</a>
+            <p class="menu cta">Menu</p>
+        </header>
+
+        <div class="container">
+            <img class="image" src="{{ user_photo }}" alt="Profile Picture">
+            <div class="text">
+                <h1>Welcome {{ user_name }}!</h1>
+                <p>We can't wait for you to experience</p>
+                <p>the magic of finding your musical soul mate.</p>
+                
+            </div>
+            
+            <!-- copy bar -->
+            <div class="link-container">
+                <input type="text" class="url input-border form-control" value="http://localhost:5000/second/user/login" readonly>
+                <span class="copy-button input-border input-group-text">
+                    <i class="fa-solid fa-copy"></i>
+                </span>
+                <div class="copied-message">Copied!</div>
+            </div>
+        </div>
+
+        <!-- <a class="cta" href="{{ user_uri }}">{{ user_name }}</a> -->
+        <div class="bottom-bar">
+            Made by Shalin Shrestha, Hillary Wong, Haniyyah Hamid, Matthew Duma, Suyesh Shrestha and Akintunji Sule
+        </div>
+
+        <!-- <div class="bottom-bar">
+            Made by 
+            <a href="link-to-Shalin-Shrestha's-page">Shalin Shrestha</a>,
+            <a href="link-to-Hillary-Wong's-page">Hillary Wong</a>,
+            <a href="link-to-Haniyyah-Hamid's-page">Haniyyah Hamid</a>,
+            <a href="link-to-Matthew-Duma's-page">Matthew Duma</a>, and
+            <a href="link-to-Suyesh-Shrestha's-page">Suyesh Shrestha</a>.
+        </div> -->
+        
+        <div id="mobile__menu" class="overlay">
+            <a class="close">&times;</a>
+            <div class="overlay__content">
+                <li><a href=  "{{ url_for('about_page') }}" >About</a></li>
+                <li><a href=  "{{ url_for('compatibility_page') }}"  >Compatibility</a></li>
+                <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+                <li><a href="/">Dashboard</a></li>
+            </div>
+        </div>
+        <script type="text/javascript" src="{{ url_for('static', filename='mobile.js') }}"></script>
+        <script type="text/javascript" src="{{ url_for('static', filename='copy-bar.js') }}"></script>
+    </body>
+</html>

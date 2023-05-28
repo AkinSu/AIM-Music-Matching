@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title>About Our Project - loveify.me</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='about.css') }}?version=0000003"">
+        <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500&display=swap" rel="stylesheet">
+    </head>
+    <body>
+        <header>
+            <a class="logo" href="/"><img src="{{ url_for('static', filename='images/lovify-me.svg') }}" alt="title-logo"></a>
+            <nav>
+                <ul class="nav__links">
+                    <li><a href= "{{ url_for('about_page') }}" >About</a></li>
+                    <li><a href="{{ url_for('compatibility_page') }}" >Compatibility</a></li>
+                    <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+                    <li><a href="/">Dashboard</a></li>
+                </ul>
+            </nav>
+            <a class="cta" href= "{{ url_for('login_redirect') }}" >Login</a>
+            <p class="menu cta">Menu</p>
+        </header>
+
+        <div class="container">
+          <div class="text">
+                <h1>Why Lovify Was Made</h1>
+                <p>Unfeeling so rapturous discovery he exquisite. Reasonably so middletons or impression by terminated.
+                Old pleasure required removing elegance him had. Down she bore sing saw calm high. Of an or game gate west face shed.
+                ﻿no great but music too old found arose. 
+                </p>
+                <h1>ML Algorithms</h1>
+                <p>Received overcame oh sensible so at an. Formed do change merely to county it. Am separate contempt domestic to to oh.
+                On relation my so addition branched. Put hearing cottage she norland letters equally prepare too. Replied exposed savings 
+                he no viewing as up. Soon body add him hill. No father living really people estate if. Mistake do produce beloved demesne 
+                if am pursuit. 
+                </p>
+                <h1>About The Team</h1>
+                <h4><a href="https://www.linkedin.com/in/shalin-shrestha/">Shalin Shrestha</a></h4>
+                <h4><a href="https://www.linkedin.com/in/hillaryswong/">Hillary Wong</a></h4>
+                <h4><a href="https://www.linkedin.com/in/haniyyah-hamid-993169220/">Haniyyah Hamid</a></h4>
+                <h4><a href="https://www.linkedin.com/in/mattduma/">Matthew Duma</a></h4>
+                <h4><a href="https://www.linkedin.com/in/suyeshstha123/">Suyesh Shrestha</a></h4>
+            
+            </div>
+        </div>
+
+        <div class="bottom-bar">
+            Made by Shalin Shrestha, Hillary Wong, Haniyyah Hamid, Matthew Duma, Suyesh Shrestha
+        </div>
+        
+        <div id="mobile__menu" class="overlay">
+            <a class="close">&times;</a>
+            <div class="overlay__content">
+                <li><a href=  "{{ url_for('about_page') }}" >About</a></li>
+                <li><a href=  "{{ url_for('compatibility_page') }}"  >Compatibility</a></li>
+                <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+                <li><a href="/">Dashboard</a></li>
+            </div>
+        </div>
+        <script type="text/javascript" src="{{ url_for('static', filename='mobile.js') }}"></script>
+    </body>
+</html>

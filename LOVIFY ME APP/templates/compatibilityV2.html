@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title>Was this the one? - loveify.me</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='compatibilityV2.css') }}?version=0000070">
+        <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+        <script src="https://sdk.scdn.co/spotify-player.js"></script>
+    </head>
+    <body>
+        <header>
+            <a class="logo" href="/"><img src="{{ url_for('static', filename='images/lovify-me.svg') }}" alt="title-logo"></a>
+            <nav>
+                <ul class="nav__links">
+                    <li><a href="{{ url_for('about_page') }}">About</a></li>
+                    <li><a href="{{ url_for('compatibility_page') }}">Compatibility</a></li>
+                    <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+                    <li><a href="/">Dashboard</a></li>
+                </ul>
+            </nav>
+            <!-- <a class="cta" href="{{ url_for('login_redirect') }}">Login</a> -->
+            <p class="menu cta">Menu</p>
+        </header>
+
+
+        <div class="container">
+            {% if first_user_info and second_user_info %}
+            <div class="user-container">
+                <h2>{{ first_user_info.user_name }}</h2>
+                <img class="user-photo" src="{{ first_user_info.user_photo }}" alt="{{ first_user_info.user_name }}'s Photo">
+                <div class="text-overlay">56.8% Pisces | 12.9% Virgo | They Keep It Lyrical | fast-talking and even faster-thinking</div>
+            </div>
+            <div class="icon-container">
+                <i class="fa-solid fa-xmark"></i>
+            </div>
+            <div class="user-container">
+                <h2>{{ second_user_info.user_name }}</h2>
+                <img class="user-photo" src="{{ second_user_info.user_photo }}" alt="{{ second_user_info.user_name }}'s Photo">
+                <div class="text-overlay">34.5% Gemini | 25.8% Scorpio | An Escape | naturally creative and sensitive</div>
+            </div>            
+            {% else %}
+                <div class="text">
+                    <p>
+                        You have to first log in with Spotify to find out how compatible your music taste with a potential match. Get your code, 
+                        and share it with others to see how your taste stacks up against the rest of the world!
+                    </p>
+                </div>
+            {% endif %}
+        </div>
+        {% if first_user_info and second_user_info %}
+        <div class="spotify-tracks-container">
+          <div class="recommendations-text">Recommendations (Start a Conversation!)</div>
+          <div class="spotify-tracks" id="spotify-tracks"></div>
+        </div>
+        
+        {% endif %}
+        <div class="bottom-bar">
+            Made by Shalin Shrestha, Hillary Wong, Haniyyah Hamid, Matthew Duma, Suyesh Shrestha
+        </div>
+        
+        <div id="mobile__menu" class="overlay">
+            <a class="close">&times;</a>
+            <div class="overlay__content">
+                <li><a href=  "{{ url_for('about_page') }}" >About</a></li>
+                <li><a href=  "{{ url_for('compatibility_page') }}"  >Compatibility</a></li>
+                <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+                <li><a href="/">Dashboard</a></li>
+            </div>
+        </div>
+        <script type="text/javascript" src="{{ url_for('static', filename='embed_code.js') }}"></script>
+        <script type="text/javascript" src="{{ url_for('static', filename='mobile.js') }}"></script>
+    </body>
+</html>
