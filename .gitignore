@@ -3,3 +3,5 @@
 .o
 .log
 flask_session
+__pycache__/
+*.pyc
