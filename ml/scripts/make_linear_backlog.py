@@ -270,6 +270,17 @@ T = [
      "and state the class sizes in the writeup.",
      "High", 2, "models,eval"),
 
+    ("Finish the fake-label control scrape",
+     "The control is the experiment that makes every other zodiac number mean "
+     "something, and it only got 71 of 480 playlists before Spotify rate-limited the "
+     "app for 20.7 hours.\n\n"
+     "Preliminary result is encouraging: random labels score 0.0785 balanced accuracy "
+     "(0.94x chance) against 0.1042 for size-matched real zodiac data, a +0.026 gap "
+     "versus the pre-registered +0.020 bar. So the signal is not a pipeline artefact. "
+     "Finish it with: scripts/scrape_zodiac.py --control --resume. Budget a full day; "
+     "~8,000 requests in 90 minutes is what triggered the ban.",
+     "High", 2, "data,eval"),
+
     ("Run the zodiac survey",
      "The only experiment with real ground truth, and it needs no Spotify API, so the "
      "25-user cap does not apply. See ml/SURVEY.md for the form, the pre-registered "

@@ -222,6 +222,35 @@ therefore reports **balanced accuracy** (macro-average recall, whose chance leve
 at 1/12 however uneven the classes) alongside raw accuracy, plus `vs_majority`.
 **Quote balanced accuracy when the real scrape lands.**
 
+### What the scrape actually found
+
+Run on 2026-10-11: 1,199 playlists, 169,010 rows, 87,907 unique tracks, all twelve
+signs. Balanced accuracy under a cluster-grouped split, chance = 0.083:
+
+| | balanced accuracy | vs chance |
+|---|---|---|
+| **control — real playlists, randomly relabelled** | **0.0785** | **0.94×** |
+| zodiac, size-matched to the control | 0.1042 | 1.25× |
+| zodiac, all features | 0.1208 | 1.45× |
+
+The control is the result that makes the rest mean anything. Non-astrology playlists
+given random zodiac labels score **at chance**, so the pipeline is not manufacturing
+the signal — the labels really do carry something. It is just very little, and it sits
+right on the dead/weak boundary. Not a product claim under any reading.
+
+*(The control is preliminary — 71 playlists before we hit the rate limit below.)*
+
+### An operational limit worth knowing
+
+The full scrape plus probes ran roughly **8,000 requests in 90 minutes**, and Spotify
+responded with a `Retry-After` of **74,655 seconds — 20.7 hours**. Plan collection in
+one sitting per day, and resume rather than restart.
+
+The scraper caps `Retry-After` at 180s and raises `RateLimitedTooLong` past it, naming
+`--resume`. That cap exists because without it the process obeyed the header literally
+and sat silent for 15 minutes before anyone noticed; with a 20.7-hour pause it would
+have looked hung until the next morning.
+
 ### The decision gate
 
 Don't pick the product now; let the measurement pick it.
