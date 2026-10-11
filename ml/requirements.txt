@@ -1,0 +1,16 @@
+# Core modelling
+numpy>=2.0
+pandas>=2.2
+scikit-learn>=1.5
+scipy>=1.13
+matplotlib>=3.8
+
+# Scraping
+requests>=2.32
+python-dotenv>=1.0
+
+# Notebooks
+jupyterlab>=4.0
+nbformat>=5.10
+nbconvert>=7.0
+ipykernel>=6.29
