@@ -14,18 +14,40 @@ token_url = "https://accounts.spotify.com/api/token"
 
 app = Flask(__name__, template_folder="templates", static_url_path="/static")
 
-app.secret_key = os.getenv('SECRET_KEY', "K4%jge$i9!ov6CrW8^y$28%$@ktzNLFTy")
+# BASE_URL: set in .env for production (e.g. https://yourapp.up.railway.app)
+# Falls back to the local dev server.
+BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8080')
+BASE_URL_IS_LOCAL = BASE_URL.startswith(("http://127.0.0.1", "http://localhost"))
+REDIRECT_URI_USER1 = f"{BASE_URL}/redirect-user"
+REDIRECT_URI_USER2 = f"{BASE_URL}/redirect-second-user"
+
+# Flask signs session cookies with this key, and our sessions carry Spotify
+# access and refresh tokens -- so anyone who knows it can forge a logged-in
+# session. It previously fell back to a literal that is committed in this
+# repository's git history, which is public. A missing key must be a crash,
+# never a silent downgrade to a published one.
+app.secret_key = os.getenv('SECRET_KEY')
+if not app.secret_key:
+    raise RuntimeError(
+        "SECRET_KEY is not set. Generate one with:\n"
+        "    python -c \"import secrets; print(secrets.token_hex(32))\"\n"
+        "then put it in .env for local development, or in the hosting "
+        "provider's environment variables for a deployment. Do not commit it."
+    )
+
 app.config['SESSION_COOKIE_NAME'] = "lovify_session"
+# The session cookie carries OAuth tokens, so keep it away from JavaScript and
+# off plaintext connections. SameSite=Lax still permits the OAuth redirect back
+# from Spotify, which is a top-level GET navigation.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=not BASE_URL_IS_LOCAL,
+)
 
 client_id = os.getenv('SPOTIFY_CLIENT_ID')
 client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
 scope = os.getenv('SCOPE')
-
-# BASE_URL: set in .env for production (e.g. https://yourapp.onrender.com)
-# Falls back to local dev server
-BASE_URL = os.getenv('BASE_URL', 'http://127.0.0.1:8080')
-REDIRECT_URI_USER1 = f"{BASE_URL}/redirect-user"
-REDIRECT_URI_USER2 = f"{BASE_URL}/redirect-second-user"
 
 
 def build_auth_url(redirect_uri):
