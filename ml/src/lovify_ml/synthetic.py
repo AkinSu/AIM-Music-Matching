@@ -109,6 +109,11 @@ def make_catalog(n_tracks: int = 6000, seed: int = 7) -> pd.DataFrame:
         pool = same if len(same) else np.arange(n_artists)
         art_idx[mask] = rng.choice(pool, size=int(mask.sum()))
     df[S.ARTIST] = artist_pool[art_idx]
+    # Stable per-artist id. The real catalog has one (prepare_catalog pulls it
+    # from the dump) and the coverage analysis joins on it, so synthetic data
+    # needs the column too or the notebook dies the moment it runs without
+    # real data -- the same contract gap as is_music.
+    df["artist_id"] = [f"A{i:06d}" for i in art_idx]
     df[S.ALBUM] = [f"{_word(rng).title()}" for _ in range(n_tracks)]
 
     # Popularity: heavily right-skewed, as in the real catalogue.
@@ -119,8 +124,18 @@ def make_catalog(n_tracks: int = 6000, seed: int = 7) -> pd.DataFrame:
     df["mode"] = rng.integers(0, 2, n_tracks)
     df["time_signature"] = rng.choice([3, 4, 5], n_tracks, p=[.10, .86, .04])
 
+    # The real catalog carries is_music (prepare_catalog flags ~4.5% of it as
+    # spoken word -- German radio drama is the 4th largest "genre" in the
+    # Kaggle dump). Synthetic data is all music, but the COLUMN has to exist
+    # either way: the whole point of this generator is that real and
+    # synthetic are interchangeable, and a notebook that filters on it should
+    # not crash when it happens to be running on synthetic data. That is
+    # exactly how CI broke.
+    df["is_music"] = True
+
     df = _clip(df)
-    return df[S.META_COLUMNS + S.AUDIO_FEATURES + ["key", "mode", "time_signature"]]
+    return df[S.META_COLUMNS + S.AUDIO_FEATURES
+              + ["key", "mode", "time_signature", "is_music", "artist_id"]]
 
 
 _SYLL = ["lo", "vi", "fy", "mar", "ta", "ven", "sol", "nox", "ria", "ken",
