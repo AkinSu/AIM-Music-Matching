@@ -43,27 +43,30 @@ Read them in order:
 
 ## What the notebooks found
 
-**Scraping zodiac playlists and training on them produces an impressive number that
-means nothing.** Playlists copy each other, so one track appears under the same sign
-many times over; a random row split then puts the identical song, with the identical
-label, in both train and test. Split the test set by whether the model had already seen
-the track, over 6 seeds:
+**Zodiac sign is barely predictable from a song, and that is the whole story.** We
+scraped it: 1,199 real playlists, 169,010 rows, 87,907 unique tracks. Under a
+cluster-grouped split with balanced accuracy:
 
-| | accuracy |
-|---|---|
-| test rows whose track **was** in training | **0.811 ± 0.010** |
-| test rows whose track was **not** in training | **0.091 ± 0.020** |
-| chance (1 of 12) | 0.083 |
+| features | balanced accuracy | vs chance |
+|---|---|---|
+| audio features (41% coverage) | 0.112 | 1.34× |
+| popularity + year + genre (100% coverage) | 0.100 | 1.20× |
+| everything combined | **0.121** | **1.45×** |
+| chance (1 of 12) | 0.083 | 1.00× |
 
-The second row is indistinguishable from guessing. Under a deduplicated, group-aware
-split the best model reaches **0.146 ± 0.012** — a real edge over chance, significant
-in 6 of 6 seeds, but nowhere near a product claim.
+**A caution against our own earlier conclusion.** Notebook 01 demonstrates a leakage
+trap — duplicate tracks straddling a random split — and on synthetic data it is
+enormous: 81% on tracks seen in training against 9% on unseen ones. On the real scrape
+it almost vanishes: **14.2% seen against 12.3% unseen.**
 
-A detail worth keeping: under leakage an unpruned decision tree scores 0.69 while
-logistic regression scores 0.15, because a tree can memorise a per-track fingerprint
-and a linear boundary structurally cannot. **A flexible model crushing a rigid one on a
-near-impossible task is a leakage signature**, not a modelling insight. Close the leak
-and the ordering reverses.
+Real zodiac playlists turn out to overlap far less than the generator assumed. Only
+25.2% of tracks appear more than once (the generator predicted 76.4%), and when a track
+does recur it is usually under a *different* sign, which is label noise rather than
+leakage fuel. Effective sample size after collapsing copied playlists came out at
+**~100% for every sign** — the generator predicted 63.6%.
+
+So the deduplication machinery is good hygiene that changes little here, and the weak
+result is not an artefact of anything. It is the ceiling.
 
 **For user similarity, the blend is the only metric that survives changing our
 assumptions.** An earlier version of this README claimed genre overlap beat every
@@ -140,10 +143,11 @@ Two operational constraints worth knowing up front:
 
 ## Data collection: the rigorous re-scrape
 
-The finding from notebook 01 is that **the labels are the problem, not the model**.
-Three evaluation protocols over identical features and algorithms gave 71%, 65% and
-15% — only the label handling differed. So the collection design is built around label
-quality rather than around modelling.
+The finding is that **the labels are the problem, not the model**. On identical
+features with identical method and group discipline, predicting *genre* reaches ~7.3×
+chance while predicting *zodiac* reaches ~1.45×. That isolates the label as the cause
+and rules out "our features or models were bad". So the collection design is built
+around label quality rather than around modelling.
 
 A label is worth training on if it is **independent** (two labels are two opinions, not
 one copied twice), **consistent** (curators agree), and **representative** (of music,
