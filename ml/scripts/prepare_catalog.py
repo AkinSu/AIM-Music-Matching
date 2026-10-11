@@ -78,6 +78,43 @@ def clean_artist(raw: str) -> str:
         return raw
 
 
+# Genres that are not music. This catalog is archival and multilingual, and a
+# surprising amount of it is spoken word: `hoerspiel` (German radio drama) is
+# the 4th largest genre in the whole dump at 10,595 tracks.
+#
+# It matters because audio features describe these tracks perfectly well and
+# completely misleadingly -- a radio play has speechiness near 1.0, and any
+# clustering puts it in its own corner. The archetype model found exactly
+# that: one of its twelve "taste archetypes" came out 52% German radio drama,
+# and it was disguised, because its most *popular* tracks are rap (rap also
+# scores high on speechiness). Eyeballing the cluster would have missed it.
+#
+# Matched on word boundaries, which is not fussiness: an earlier substring
+# version flagged "ukrainian pop" because `rain` is inside Uk-rain-ian.
+NONMUSIC_TERMS = [
+    "hoerspiel", "horspiel", "hörspiel", "audiobook", "hoerbuch", "horbuch",
+    "spoken word", "poetry", "reading", "radio drama", "comedy", "stand-up",
+    "barnsagor", "barnmusik", "kindermusik", "sagor",
+    "meditation", "asmr", "sleep", "white noise", "nature sounds", "binaural",
+]
+SPEECHINESS_SPOKEN = 0.66  # Spotify's own documented threshold for spoken word
+
+
+def flag_nonmusic(df: pd.DataFrame) -> pd.Series:
+    """True where a row is probably not music.
+
+    Two independent signals, because neither is sufficient alone: the genre
+    label catches what is named, and speechiness catches what is not labelled
+    (6,207 high-speechiness tracks carry genre `unknown`).
+    """
+    import re
+
+    pattern = "|".join(rf"\b{re.escape(t)}\b" for t in NONMUSIC_TERMS)
+    by_genre = df["genre"].fillna("").str.lower().str.contains(pattern, regex=True)
+    by_sound = df["speechiness"].fillna(0) > SPEECHINESS_SPOKEN
+    return by_genre | by_sound
+
+
 def merge_extra_sources(base: pd.DataFrame) -> pd.DataFrame:
     """Union additional feature dumps in, keyed on Spotify track id.
 
@@ -212,6 +249,13 @@ def main() -> None:
     no_year = out["year"].isna().sum()
     if no_year:
         print(f"  {no_year:,} rows have features but no release year")
+
+    # Non-destructive: flag rather than drop, so a notebook can choose. The
+    # archetype model and anything clustering audio space should filter on it;
+    # a feature lookup for a track a user actually played should not.
+    out["is_music"] = ~flag_nonmusic(out)
+    print(f"  flagged as non-music: {(~out['is_music']).sum():,} "
+          f"({(~out['is_music']).mean():.1%})  -- spoken word, radio drama, sleep audio")
 
     out.to_csv(OUT, index=False)
 
