@@ -41,6 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "data" / "raw" / "kaggle_600k"
 OUT = ROOT / "data" / "raw" / "tracks.csv"
 ARTIST_OUT = ROOT / "data" / "raw" / "artist_genres.csv"
+STORE_OUT = ROOT / "data" / "raw" / "feature_store.csv"
 
 OK, WARN, DIM, END = "\033[92m", "\033[93m", "\033[2m", "\033[0m"
 
@@ -75,6 +76,64 @@ def clean_artist(raw: str) -> str:
         return ", ".join(a) if a else "unknown"
     except (ValueError, SyntaxError):
         return raw
+
+
+def merge_extra_sources(base: pd.DataFrame) -> pd.DataFrame:
+    """Union additional feature dumps in, keyed on Spotify track id.
+
+    Coverage is the binding constraint on this whole design, and it is worse
+    than it looks: only 25.8% of our scraped tracks resolve against the 600k
+    dump, because that dump stops at 2021 while zodiac playlists are full of
+    recent music (missing tracks have a median release year of 2022 against
+    2012 for resolved ones).
+
+    No single dump fixes that, and none ever will -- /v1/audio-features died
+    on 2024-11-27, so no dataset can contain features for anything released
+    after it. Unioning several dumps captured at different times is the only
+    lever we have. Drop any CSV with an `id` (or `track_id`) column plus audio
+    features into data/raw/extra/ and it gets folded in here; rows already
+    present win, so the base dump stays authoritative.
+    """
+    extra_dir = ROOT / "data" / "raw" / "extra"
+    if not extra_dir.exists():
+        return base
+
+    files = sorted(p for p in extra_dir.glob("*.csv"))
+    if not files:
+        return base
+
+    feats = ["danceability", "energy", "speechiness", "acousticness",
+             "instrumentalness", "liveness", "valence", "tempo", "loudness",
+             "duration_ms", "key", "mode", "time_signature"]
+
+    for path in files:
+        print(f"{DIM}folding in {path.name} …{END}")
+        try:
+            df = pd.read_csv(path, low_memory=False)
+        except Exception as exc:
+            print(f"  {WARN}skipped: {exc}{END}")
+            continue
+
+        df = df.rename(columns={"id": "track_id", "name": "track_name",
+                                "artists": "artist", "album_name": "album"})
+        missing = [f for f in feats if f not in df.columns]
+        if "track_id" not in df.columns or len(missing) > 3:
+            print(f"  {WARN}skipped: not a usable feature source "
+                  f"(missing {missing[:4]}){END}")
+            continue
+
+        keep = ["track_id"] + [f for f in feats if f in df.columns]
+        for c in ("track_name", "artist", "album", "genre", "popularity", "year"):
+            if c in df.columns:
+                keep.append(c)
+        df = df[keep].drop_duplicates("track_id")
+
+        new = df[~df["track_id"].isin(set(base["track_id"]))]
+        print(f"  {len(df):,} rows, {len(new):,} track ids we did not already have")
+        if len(new):
+            base = pd.concat([base, new], ignore_index=True)
+
+    return base
 
 
 def main() -> None:
@@ -123,13 +182,40 @@ def main() -> None:
               "duration_ms", "key", "mode", "time_signature"]:
         out[f] = tracks[f]
 
+    # Two outputs, deliberately. The CATALOG is the curated 600k: every row
+    # has genre, year and popularity, and it is what the recommender draws
+    # candidates from and what the notebooks analyse. The FEATURE STORE is the
+    # union of every dump we have, audio features only, and exists for one
+    # job -- looking up "what does this track sound like" for a track someone
+    # actually listened to.
+    #
+    # Folding the extras into the catalog instead was a mistake I made and
+    # reverted: it lifted scraped-track coverage from 25.8% to 42.9%, but
+    # dropped catalog genre coverage from 89.6% to 37%, because the extra
+    # dumps carry features without genre, year or popularity. Those are
+    # different jobs and they want different tables.
+    store = merge_extra_sources(out.copy())
+    store_cols = ["track_id"] + [c for c in [
+        "danceability", "energy", "speechiness", "acousticness",
+        "instrumentalness", "liveness", "valence", "tempo", "loudness",
+        "duration_ms", "key", "mode", "time_signature"] if c in store.columns]
+    store[store_cols].drop_duplicates("track_id").to_csv(STORE_OUT, index=False)
+    print(f"  wrote {STORE_OUT.name}: {len(store):,} tracks with audio features")
+
     before = len(out)
-    out = out.dropna(subset=["track_id", "year"])
-    out = out.drop_duplicates("track_id")
-    print(f"  dropped {before - len(out):,} rows (missing id/year, or duplicate track)")
+    # Only track_id is mandatory. Extra sources often carry audio features
+    # without a release year, and features are the reason we are here -- a
+    # row with no year still answers "what does this song sound like", which
+    # is what the deprecated endpoint used to tell us.
+    out = out.dropna(subset=["track_id"]).drop_duplicates("track_id")
+    print(f"  dropped {before - len(out):,} rows (missing id, or duplicate track)")
+    no_year = out["year"].isna().sum()
+    if no_year:
+        print(f"  {no_year:,} rows have features but no release year")
 
     out.to_csv(OUT, index=False)
 
+    out["genre"] = out["genre"].fillna("unknown")
     cov = (out["genre"] != "unknown").mean()
     print(f"\n{OK}wrote{END} {OUT.relative_to(ROOT)}  ({len(out):,} tracks)")
     print(f"  genre coverage      : {cov:.1%}")
