@@ -203,6 +203,10 @@ class _Token:
 
 # ── the scraper ───────────────────────────────────────────────────────────────
 
+class RateLimitedTooLong(RuntimeError):
+    """Raised when Spotify's requested pause exceeds MAX_RETRY_AFTER."""
+
+
 class SpotifyScraper:
     """Read-only Spotify client for a deep, resumable playlist scrape.
 
@@ -282,14 +286,24 @@ class SpotifyScraper:
         return {"Authorization": f"Bearer {self._token.value}"}
 
     # ── HTTP ────────────────────────────────────────────────────────────────
+    # Longest single pause we will take on a 429 before giving up and
+    # letting the caller resume later.
+    #
+    # Obeying Retry-After is not optional -- ignoring it is how an app key
+    # earns a longer ban. But obeying it *without a cap* is how a scrape
+    # turns into a silent hang: after ~7,500 requests in one session Spotify
+    # handed us a Retry-After long enough that the process sat there for 15
+    # minutes with no output, two sockets in CLOSE_WAIT and 2.8 seconds of
+    # CPU. It looked exactly like a deadlock.
+    #
+    # Past this cap, stopping is better than sleeping. The checkpoint already
+    # makes the work resumable, so --resume after the window expires costs
+    # nothing, and the operator finds out immediately instead of an hour later.
+    MAX_RETRY_AFTER = 180.0
+
     @staticmethod
     def _retry_after(response, default: float = 2.0) -> float:
-        """Seconds to wait after a 429, from the header Spotify sends.
-
-        Spotify's Retry-After can be large (tens of seconds, occasionally
-        minutes). Obeying it is not optional: ignoring it is how an app key
-        earns a longer ban.
-        """
+        """Seconds to wait after a 429, from the header Spotify sends."""
         raw = (getattr(response, "headers", None) or {}).get("Retry-After")
         try:
             return float(raw) + 1.0  # +1s of slack for clock skew
@@ -334,7 +348,15 @@ class SpotifyScraper:
 
             if code == 429:
                 self.stats["rate_limited"] += 1
-                self._sleep(self._retry_after(r))
+                wait = self._retry_after(r)
+                if wait > self.MAX_RETRY_AFTER:
+                    raise RateLimitedTooLong(
+                        f"Spotify asked for a {wait:.0f}s pause, past the "
+                        f"{self.MAX_RETRY_AFTER:.0f}s cap. Stopping so the wait is "
+                        "visible rather than silent -- progress is checkpointed, so "
+                        "re-run with --resume once the window has passed.")
+                print(f"    rate limited, waiting {wait:.0f}s", flush=True)
+                self._sleep(wait)
                 continue
             if code == 401 and not refreshed:
                 # Token died early (revoked, or clock skew). One free refresh.

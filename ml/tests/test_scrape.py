@@ -1698,3 +1698,42 @@ class TestPlantedTitlesInTheDryRun(unittest.TestCase):
         extra = set(lenient_kept[S.PLAYLIST_NAME]) - set(self.kept[S.PLAYLIST_NAME])
         expected = {t for s_ in saved for t in sc.CONTAMINATED_TITLES.get(s_, ())}
         self.assertEqual(extra, expected)
+
+
+class TestRateLimitCap(unittest.TestCase):
+    """A 429 we obey must not become an invisible hang.
+
+    Regression test for a real incident: after ~7,500 requests in one session
+    Spotify returned a Retry-After long enough that the scraper slept with no
+    output for 15 minutes, two sockets in CLOSE_WAIT and 2.8s of CPU. It was
+    indistinguishable from a deadlock. Past a cap, failing loudly beats
+    sleeping quietly -- the checkpoint makes resuming free.
+    """
+
+    def _scraper(self, retry_after):
+        slept: list[float] = []
+        session = FakeSession()
+        session.route("/v1/whatever", lambda params, n: (
+            FakeResponse(429, headers={"Retry-After": str(retry_after)}) if n == 0
+            else FakeResponse(200, {"ok": True})))
+        s = sc.SpotifyScraper("id", "secret", session=session,
+                              sleep=slept.append, verbose=False)
+        return s, slept
+
+    def test_short_pause_is_obeyed(self):
+        s, slept = self._scraper(5)
+        s._get("/v1/whatever")
+        self.assertTrue(slept, "a short Retry-After should have been slept on")
+        self.assertAlmostEqual(slept[0], 6.0, places=3)  # header + 1s of slack
+
+    def test_long_pause_raises_instead_of_sleeping(self):
+        s, slept = self._scraper(3600)
+        with self.assertRaises(sc.RateLimitedTooLong) as ctx:
+            s._get("/v1/whatever")
+        self.assertEqual(slept, [], "must not sleep past the cap")
+        self.assertIn("--resume", str(ctx.exception),
+                      "the error should tell the operator how to recover")
+
+    def test_the_cap_itself_is_sane(self):
+        self.assertLessEqual(sc.SpotifyScraper.MAX_RETRY_AFTER, 300)
+        self.assertGreaterEqual(sc.SpotifyScraper.MAX_RETRY_AFTER, 30)

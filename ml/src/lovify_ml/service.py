@@ -50,6 +50,18 @@ class LovifyModels:
     # whoever wrote it. Lower it once real libraries have been measured.
     MIN_LIBRARY_TRACKS = 100
 
+    # A user's top sign counts as "distinctive" if its lift lands in the top
+    # DISTINCTIVE_QUANTILE of the reference population. This used to be a
+    # hardcoded 1.25x, which is the kind of number that looks principled and
+    # is not: measured on synthetic listeners it passed 100% of them, and a
+    # flag that fires for everyone carries exactly as much information as one
+    # that never fires.
+    #
+    # Fitting it to the population means the share of users who see a
+    # "distinctive" badge stays roughly fixed no matter how concentrated the
+    # population's listening is, which is the property the product wants.
+    DISTINCTIVE_QUANTILE = 0.75
+
     def __init__(self, zodiac_model=None, blend_weights: dict | None = None,
                  n_modes: int = 3, mmr_lambda: float = 1.0,
                  min_library_tracks: int | None = None):
@@ -66,6 +78,8 @@ class LovifyModels:
         self.catalog: pd.DataFrame | None = None
         self.zodiac_base_rate: pd.Series | None = None
         self.null_ladder: dict[int, np.ndarray] = {}
+        # Falls back to the old constant until fit() sees a population.
+        self.distinctive_threshold: float = 1.25
         self._rec: Rm.Recommender | None = None
 
     @property
@@ -102,7 +116,25 @@ class LovifyModels:
 
         if listens is not None:
             self.fit_null_ladder(listens)
+            self.fit_distinctive_threshold(listens)
         return self
+
+    def fit_distinctive_threshold(self, listens: pd.DataFrame) -> float:
+        """Set the "distinctive" bar from the population, not from a guess.
+
+        Computes every reference listener's top-sign lift and takes the
+        DISTINCTIVE_QUANTILE of that distribution. On a population where
+        everyone is concentrated the bar rises; where everyone is eclectic it
+        falls. Either way roughly the top quarter of users get the badge,
+        which is what makes it mean something when they do.
+        """
+        tops = []
+        for _, g in listens.groupby(S.USER_ID):
+            mix = Zm.taste_mix(self.zodiac_model, g)
+            tops.append(float(Zm.lift(mix, self.zodiac_base_rate).iloc[0]))
+        if tops:
+            self.distinctive_threshold = float(np.quantile(tops, self.DISTINCTIVE_QUANTILE))
+        return self.distinctive_threshold
 
     def fit_null_ladder(self, listens: pd.DataFrame, n_pairs: int = 400,
                         seed: int = 0) -> dict[int, np.ndarray]:
@@ -198,7 +230,8 @@ class LovifyModels:
             "headline_sign": top,
             "headline_lift": round(float(lift.iloc[0]), 2),
             # Say so when the signal is thin, rather than dressing noise as insight.
-            "is_distinctive": bool(lift.iloc[0] >= 1.25),
+            "is_distinctive": bool(lift.iloc[0] >= self.distinctive_threshold),
+            "distinctive_threshold": round(float(self.distinctive_threshold), 3),
         }
 
     def compatibility(self, tracks_a: pd.DataFrame, tracks_b: pd.DataFrame) -> dict:
