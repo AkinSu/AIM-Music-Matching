@@ -44,14 +44,14 @@ Read them in order:
 ## What the notebooks found
 
 **Zodiac sign is barely predictable from a song, and that is the whole story.** We
-scraped it: 1,199 real playlists, 169,010 rows, 87,907 unique tracks. Under a
+scraped it: 1,325 real playlists, 169,010 rows, 87,907 unique tracks. Under a
 cluster-grouped split with balanced accuracy:
 
 | features | balanced accuracy | vs chance |
 |---|---|---|
-| audio features (41% coverage) | 0.112 | 1.34× |
 | popularity + year + genre (100% coverage) | 0.100 | 1.20× |
-| everything combined | **0.121** | **1.45×** |
+| audio features (41% coverage) | 0.107 | 1.28× |
+| everything combined | **0.116** | **1.39×** |
 | chance (1 of 12) | 0.083 | 1.00× |
 
 **A caution against our own earlier conclusion.** Notebook 01 demonstrates a leakage
@@ -145,7 +145,7 @@ Two operational constraints worth knowing up front:
 
 The finding is that **the labels are the problem, not the model**. On identical
 features with identical method and group discipline, predicting *genre* reaches ~7.3×
-chance while predicting *zodiac* reaches ~1.45×. That isolates the label as the cause
+chance while predicting *zodiac* reaches ~1.4×. That isolates the label as the cause
 and rules out "our features or models were bad". So the collection design is built
 around label quality rather than around modelling.
 
@@ -224,19 +224,30 @@ at 1/12 however uneven the classes) alongside raw accuracy, plus `vs_majority`.
 
 ### What the scrape actually found
 
-Run on 2026-10-11: 1,199 playlists, 169,010 rows, 87,907 unique tracks, all twelve
-signs. Balanced accuracy under a cluster-grouped split, chance = 0.083:
+Run on 2026-10-11: **1,325 playlists, 87,907 unique tracks**, all twelve signs.
+Balanced accuracy under a cluster-grouped split, chance = 0.083:
 
 | | balanced accuracy | vs chance |
 |---|---|---|
 | **control — real playlists, randomly relabelled** | **0.0785** | **0.94×** |
-| zodiac, size-matched to the control | 0.1042 | 1.25× |
-| zodiac, all features | 0.1208 | 1.45× |
+| popularity + year + genre (100% coverage) | 0.1000 | 1.20× |
+| audio features (41% coverage) | 0.1067 | 1.28× |
+| everything combined | 0.1156 | 1.39× |
+| *pre-registered "dead" threshold* | *0.1200* | *1.44×* |
 
-The control is the result that makes the rest mean anything. Non-astrology playlists
+Two things follow, and they point in opposite directions.
+
+The control is the result that makes the rest mean anything: non-astrology playlists
 given random zodiac labels score **at chance**, so the pipeline is not manufacturing
-the signal — the labels really do carry something. It is just very little, and it sits
-right on the dead/weak boundary. Not a product claim under any reading.
+the signal. The labels really do carry something, and the gap (+0.0296) clears the
+pre-registered +0.0200 bar.
+
+But **every feature set lands below the "dead" threshold.** The signal is real and too
+small to build on. That is not a borderline call; it is the verdict the gate was
+written to deliver, with the threshold fixed before any of this was measured.
+
+A quirk worth recording: per-sign playlist counts sum to 1,345 against 1,325 distinct,
+so 20 playlists are returned by more than one sign's search.
 
 *(The control is preliminary — 71 playlists before we hit the rate limit below.)*
 
