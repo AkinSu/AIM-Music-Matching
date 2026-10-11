@@ -247,7 +247,19 @@ def _affinity(Z: np.ndarray, targets: np.ndarray, temperature: float) -> np.ndar
     Soft, not nearest-sign: a track sitting between two signs is real
     information and rounding it to a vote discards it. Same argument notebook
     01 made for averaging probabilities instead of counting hard labels.
+
+    `temperature` must be positive. Zero divides by zero and returns all-NaN
+    rather than raising, which then propagates silently through taste_mix and
+    lift so that `headline_sign` comes out as garbage instead of an error. A
+    negative value is worse: it flips the sign of every logit and quietly
+    selects the sign a track is *least* like.
     """
+    if not temperature > 0:
+        raise ValueError(
+            f"temperature must be positive, got {temperature!r}. Zero yields "
+            "all-NaN affinities and a negative value inverts the ranking, "
+            "selecting the least-matching sign -- both fail silently."
+        )
     d2 = ((Z[:, None, :] - targets[None, :, :]) ** 2).sum(axis=2)
     logits = -d2 / (2.0 * temperature)
     logits -= logits.max(axis=1, keepdims=True)

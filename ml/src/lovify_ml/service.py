@@ -137,7 +137,7 @@ class LovifyModels:
         return self.distinctive_threshold
 
     def fit_null_ladder(self, listens: pd.DataFrame, n_pairs: int = 400,
-                        seed: int = 0) -> dict[int, np.ndarray]:
+                        seed: int = 0, verbose: bool = True) -> dict[int, np.ndarray]:
         """Build one null distribution per library size, not a single global one.
 
         A percentile only means something against a reference population that
@@ -168,8 +168,27 @@ class LovifyModels:
         if len(users) < 2:
             raise ValueError("need at least 2 users to build null distributions")
 
+        # A rung can only be built from libraries that are actually that
+        # big: sample() below is capped at len(user). Without this check the
+        # top rungs silently become copies of the largest available size
+        # under different labels -- measured on 105-120 track users, rungs
+        # 150/200/300/500 all produced means within 0.014 of each other, so a
+        # genuinely 300-track pair was scored against a ~115-track null and
+        # the ladder quietly reintroduced the bias it exists to remove.
+        #
+        # Build only the rungs the population supports, and say so.
+        largest = max(len(g) for g in by_user.values())
+        usable = [s_ for s_ in self.NULL_SIZES if s_ <= largest]
+        if not usable:
+            usable = [min(self.NULL_SIZES)]
+        dropped = [s_ for s_ in self.NULL_SIZES if s_ not in usable]
+        if dropped and verbose:
+            print(f"[service] skipping null rungs {dropped}: the largest "
+                  f"reference library is {largest} tracks. Pairs above that "
+                  f"size are scored against the {max(usable)}-track rung.")
+
         self.null_ladder = {}
-        for size in self.NULL_SIZES:
+        for size in usable:
             scores = []
             for _ in range(n_pairs):
                 u, v = rng.choice(users, size=2, replace=False)
@@ -246,6 +265,31 @@ class LovifyModels:
         b = tracks_b.copy(); b[S.USER_ID] = "B"
         n_a, n_b = len(a), len(b)
         smaller = min(n_a, n_b)
+
+        # An empty library has to be handled before anything touches the
+        # scorer. groupby() produces no "A" group for zero rows, so every
+        # component lookup raises KeyError -- and the refusal branch below
+        # used to call components() itself, meaning the one path written to
+        # handle too-little-data crashed on the least data possible.
+        #
+        # Not hypothetical: feature-store coverage is 41%, so a user whose
+        # tracks all fail the join arrives here with zero rows.
+        if not n_a or not n_b:
+            return {
+                "percentile": None,
+                "status": "no_resolvable_tracks",
+                "tracks": {"a": n_a, "b": n_b},
+                "min_required": self.min_library_tracks,
+                "components": {},
+                "shared_artists": [],
+                "n_shared_artists": 0,
+                "interpretation": (
+                    "We could not resolve any of "
+                    f"{'your' if not n_a else 'their'} tracks, so there is "
+                    "nothing to compare yet. This usually means the music is "
+                    "too new or too obscure for our audio database."
+                ),
+            }
 
         pair = pd.concat([a, b], ignore_index=True)
         scorer = SIMm.CompatibilityScorer(pair, self.blend_weights,

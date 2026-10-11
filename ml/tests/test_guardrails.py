@@ -175,8 +175,19 @@ class ServiceGuardrails(unittest.TestCase):
         self.assertEqual(out["status"], "ok")
         self.assertTrue(0 <= out["percentile"] <= 100)
 
-    def test_null_ladder_covers_every_rung(self):
-        self.assertEqual(sorted(self.models.null_ladder), sorted(SV.LovifyModels.NULL_SIZES))
+    def test_null_ladder_covers_every_supported_rung(self):
+        """Every rung the population can actually fill, and no more.
+
+        This test previously demanded all of NULL_SIZES, which encoded the
+        bug the PR review found: sample() caps at len(user), so a rung above
+        the largest library is that library relabelled. Skipping those is
+        correct, so the assertion is now "a prefix of NULL_SIZES, bounded by
+        the biggest reference library".
+        """
+        largest = max(len(g) for _, g in self.listens.groupby(S.USER_ID))
+        expected = [s for s in SV.LovifyModels.NULL_SIZES if s <= largest]
+        self.assertEqual(sorted(self.models.null_ladder), expected)
+        self.assertTrue(expected, "no rung is small enough for this population")
         for size, null in self.models.null_ladder.items():
             self.assertGreater(len(null), 50, f"rung {size} is too sparse to read a percentile from")
 
@@ -236,3 +247,63 @@ class ScalingContract(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ReviewRegressions(unittest.TestCase):
+    """Three findings from the PR #2 review. Each failed before its fix.
+
+    All three share a shape worth naming: they fail *silently* or in the
+    branch written to handle failure. None were caught by the 231 tests that
+    existed, because those tested the paths that work.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        catalog = _catalog(2000)
+        zodiac = syn.make_zodiac_playlists(catalog, seed=11)
+        listens, _ = syn.make_users(catalog, n_users=20, tracks_per_user=140, seed=23)
+        cls.models = SV.LovifyModels().fit(catalog, zodiac, listens)
+        users = sorted(listens[S.USER_ID].unique())
+        cls.a = listens[listens[S.USER_ID] == users[0]]
+        cls.b = listens[listens[S.USER_ID] == users[1]]
+        cls.catalog = catalog
+
+    def test_empty_library_refuses_instead_of_crashing(self):
+        """The guard for too-little-data used to crash on the least data.
+
+        Reachable in production: feature-store coverage is ~41%, so a user
+        whose tracks all fail the join arrives with zero rows.
+        """
+        out = self.models.compatibility(self.a.head(0), self.b)
+        self.assertEqual(out["status"], "no_resolvable_tracks")
+        self.assertIsNone(out["percentile"])
+        self.assertIn("interpretation", out)
+
+        both = self.models.compatibility(self.a.head(0), self.b.head(0))
+        self.assertEqual(both["status"], "no_resolvable_tracks")
+
+    def test_null_ladder_skips_rungs_the_population_cannot_fill(self):
+        """A rung built from libraries smaller than its own size is a lie.
+
+        sample() caps at len(user), so on 140-track users the 200/300/500
+        rungs would otherwise be the 140-track distribution relabelled, and a
+        genuinely large pair gets scored against a small-library null.
+        """
+        largest = self.models.catalog is not None and 140
+        for size in self.models.null_ladder:
+            self.assertLessEqual(
+                size, 150,
+                f"rung {size} exceeds the largest reference library (~140); "
+                "it cannot have been built from libraries that size")
+
+    def test_zero_temperature_raises_rather_than_returning_nan(self):
+        from lovify_ml import features as F
+        from lovify_ml import rubric as R
+
+        scaler = F.fit_scaler(self.catalog)
+        tracks = self.catalog.head(5)
+        for bad in (0, 0.0, -1.0):
+            with self.assertRaises(ValueError, msg=f"temperature={bad} must raise"):
+                R.score_tracks(tracks, scaler, temperature=bad)
+        ok = R.score_tracks(tracks, scaler, temperature=1.0)
+        self.assertFalse(ok.isna().any().any())
