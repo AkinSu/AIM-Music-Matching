@@ -70,8 +70,62 @@ def load_catalog(n_synthetic: int = 6000, seed: int = 7, verbose: bool = True) -
     return syn.make_catalog(n_synthetic, seed=seed)
 
 
-def load_zodiac(catalog: pd.DataFrame | None = None, verbose: bool = True, **kw) -> pd.DataFrame:
-    """Zodiac-labelled playlist tracks."""
+def attach_audio_features(df: pd.DataFrame, verbose: bool = True,
+                          drop_unresolved: bool = True) -> pd.DataFrame:
+    """Join audio features onto a frame that only has track ids.
+
+    The scraper cannot collect audio features -- /v1/audio-features has
+    returned 403 since 2024-11-27 -- so a real scrape arrives with genre,
+    popularity and year but none of the 13 audio columns. Synthetic data has
+    always had all of them. Without this join, every notebook written against
+    synthetic data breaks the moment real data appears, which is exactly what
+    happened.
+
+    Prefers feature_store.csv (the union of every dump, ~1.4M tracks) over
+    tracks.csv (the curated 586k), because the store resolves materially more.
+
+    `drop_unresolved` keeps the contract that downstream code can rely on
+    the audio columns being present and non-null, the way synthetic data
+    always could. It is lossy and the loss is not random -- unresolved tracks
+    skew recent and obscure -- so the coverage figure is printed every time
+    rather than buried.
+    """
+    missing = [f for f in S.AUDIO_FEATURES if f not in df.columns]
+    if not missing:
+        return df
+
+    for source in (RAW / "feature_store.csv", RAW / "tracks.csv"):
+        if not source.exists():
+            continue
+        store = pd.read_csv(source, low_memory=False)
+        # Only bring in what is actually absent, or pandas appends _x/_y
+        # suffixes and the audio columns silently vanish under new names.
+        bring = [f for f in S.AUDIO_FEATURES if f in store.columns and f not in df.columns]
+        if not bring:
+            continue
+
+        before = df[S.TRACK_ID].nunique()
+        out = df.merge(store[[S.TRACK_ID] + bring].drop_duplicates(S.TRACK_ID),
+                       on=S.TRACK_ID, how="left")
+        resolved = out.loc[out[bring[0]].notna(), S.TRACK_ID].nunique()
+        if verbose:
+            print(f"[data] audio features joined from {source.name}: "
+                  f"{resolved:,}/{before:,} tracks ({resolved/max(before,1):.1%})")
+        if drop_unresolved:
+            out = out.dropna(subset=bring)
+            if verbose:
+                print(f"[data] kept {len(out):,} rows with complete features "
+                      f"-- unresolved tracks skew recent and obscure")
+        return out
+
+    raise FileNotFoundError(
+        "This frame has no audio features and there is no feature store to join "
+        "from. Run: .venv/bin/python scripts/prepare_catalog.py")
+
+
+def load_zodiac(catalog: pd.DataFrame | None = None, verbose: bool = True,
+                with_features: bool = True, **kw) -> pd.DataFrame:
+    """Zodiac-labelled playlist tracks, with audio features attached."""
     path = RAW / "zodiac.csv"
     if path.exists():
         df = _normalise(pd.read_csv(path))
@@ -80,7 +134,7 @@ def load_zodiac(catalog: pd.DataFrame | None = None, verbose: bool = True, **kw)
         if verbose:
             print(f"[data] REAL zodiac set: {len(df):,} rows, "
                   f"{df[S.TRACK_ID].nunique():,} unique tracks")
-        return df
+        return attach_audio_features(df, verbose=verbose) if with_features else df
     catalog = load_catalog(verbose=False) if catalog is None else catalog
     if verbose:
         print(f"[data] SYNTHETIC zodiac playlists. Drop your scrape at {path} to use real ones.")

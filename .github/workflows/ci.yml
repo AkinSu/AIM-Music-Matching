@@ -38,17 +38,9 @@ jobs:
       - name: Install
         run: pip install -r ml/requirements.txt
 
-      # Executed to a throwaway copy: the committed notebooks keep the outputs
-      # their author reviewed. This job only answers "does it still run",
-      # which is how results quietly rot without anyone noticing.
-      - name: Execute every notebook
+      # Re-executes the notebooks that can run without data/raw (they fall
+      # back to synthetic data), and structurally validates the ones that
+      # cannot. See scripts/ci_notebooks.py for why the split exists.
+      - name: Check notebooks
         working-directory: ml
-        run: |
-          mkdir -p /tmp/nb-ci
-          for nb in notebooks/*.ipynb; do
-            echo "::group::$nb"
-            jupyter nbconvert --to notebook --execute \
-              --ExecutePreprocessor.timeout=1800 \
-              --output-dir=/tmp/nb-ci "$nb"
-            echo "::endgroup::"
-          done
+        run: python scripts/ci_notebooks.py
