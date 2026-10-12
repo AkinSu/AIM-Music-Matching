@@ -66,8 +66,13 @@ test-app:  ## run the app test suite inside the container (real Postgres)
 	@$(COMPOSE) exec -T db psql -U $(PG_USER) -d $(PG_DB) -tc \
 	  "SELECT 1 FROM pg_database WHERE datname='$(PG_DB)_test'" | grep -q 1 \
 	  || $(COMPOSE) exec -T db createdb -U $(PG_USER) $(PG_DB)_test
+	@# The scratch database is where match state is written and wiped. The
+	@# seeded one is passed separately and only ever read, which is what lets
+	@# tests/test_real_model.py exercise the trained model against real audio
+	@# features instead of a stub. Without it those seven tests skip.
 	$(COMPOSE) exec -T -w /app/web \
 	  -e DATABASE_URL=postgresql+psycopg://$(PG_USER):lovify@db:5432/$(PG_DB)_test \
+	  -e LOVIFY_SEEDED_DATABASE_URL=postgresql+psycopg://$(PG_USER):lovify@db:5432/$(PG_DB) \
 	  web python -m pytest -q tests
 
 test-all:  ## both suites, the way CI runs them
