@@ -30,6 +30,8 @@ from flask import (
 
 import matching
 import oauth_state
+import security
+import sharing
 from models import MatchStatus, Role, init_db, make_engine, make_session_factory
 from scoring import Scorer
 from spotify_client import SpotifyClient, SpotifyError
@@ -60,10 +62,23 @@ if not app.secret_key:
 
 app.config["SESSION_COOKIE_NAME"] = "lovify_session"
 app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_HTTPONLY=True,    # no script can read it, so XSS cannot steal it
     SESSION_COOKIE_SAMESITE="Lax",   # still permits the OAuth redirect back
     SESSION_COOKIE_SECURE=not BASE_URL_IS_LOCAL,
 )
+
+# Transport and response headers. See security.py for what each one closes.
+security.install(app, local=BASE_URL_IS_LOCAL)
+
+
+@app.context_processor
+def _csrf():
+    """`{{ csrf_token() }}` in any template, minted on first use."""
+    return {"csrf_token": security.token}
+
+
+def _csrf_ok() -> bool:
+    return security.valid(request.form.get(security.CSRF_FIELD))
 
 # ── wiring, all overridable in tests ─────────────────────────────────────────
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///lovify.db")
@@ -117,8 +132,35 @@ def _role_in(match_id: str) -> str | None:
     return session.get(f"role:{match_id}")
 
 
-def share_link(match_id: str) -> str:
+def _remember_identity(spotify_id: str) -> None:
+    """Who this browser is, across matches.
+
+    The per-match role keys cannot carry the history page: they are scoped to
+    one match each and they vanish when someone clears their cookies. This is
+    one more key, and it is the weakest identity in the system -- a cookie,
+    not a session with a server-side record -- so it gates listing and
+    sharing, never anything destructive beyond the user's own links.
+    """
+    session["spotify_id"] = spotify_id
+
+
+def _who() -> str | None:
+    return session.get("spotify_id")
+
+
+def invite_link(match_id: str) -> str:
+    """Private. A capability to JOIN. Never put this on a social network."""
     return urljoin(BASE_URL + "/", f"m/{match_id}")
+
+
+def public_link(token: str) -> str:
+    """Public. A capability to READ one finished result, and nothing else."""
+    return urljoin(BASE_URL + "/", f"s/{token}")
+
+
+# Kept under the old name because templates and tests call it; the rename
+# above is the one that carries the meaning.
+share_link = invite_link
 
 
 # ── pages ────────────────────────────────────────────────────────────────────
@@ -163,6 +205,14 @@ def match_page(match_id: str):
             return render_template("match_error.html", message=str(exc)), 404
 
         role = _role_in(match_id)
+        if role is None:
+            # The cookie may simply be from another browser. If this Spotify
+            # account is in the match, it is still a participant.
+            me = _who()
+            if me is not None:
+                found = next((p for p in match.participants if p.spotify_id == me), None)
+                role = found.role if found else None
+
         vm = matching.view_model(match, role)
 
         if role is None and match.invited is None:
@@ -173,11 +223,31 @@ def match_page(match_id: str):
                 match_id=match_id,
             )
 
+        if role is None:
+            # A stranger holding the invite link to a match that is already
+            # full. Previously this rendered the result, which made the one
+            # link that gets texted around into a public result page nobody
+            # chose to publish. Results are now participants-only; a public
+            # view exists, at /s/<token>, and only because someone pressed
+            # a button to create it.
+            return render_template(
+                "match_error.html",
+                message=("This invitation has already been used by two people, "
+                         "so there is nothing here for you. Start your own "
+                         "match and send your own link.")), 403
+
         if match.status == MatchStatus.WAITING:
             return render_template("match_waiting.html",
-                                   share_url=share_link(match_id), **vm)
+                                   share_url=invite_link(match_id), **vm)
 
-        return render_template("match_result.html", **vm)
+        with db_session() as db2:
+            card = (sharing.active_card(db2, match_id, _who())
+                    if _who() else None)
+            card_url = public_link(card.token) if card else None
+            card_details = card.include_details if card else False
+
+        return render_template("match_result.html", share_card_url=card_url,
+                               share_card_details=card_details, **vm)
 
 
 @app.route("/m/<match_id>/join")
@@ -238,8 +308,10 @@ def oauth_callback():
         # Explicit about the design: the token's whole life is this block.
         token = None
 
+    # The match id is a capability to join. Log a digest of it: still
+    # traceable through a log file, no longer usable from one.
     app.logger.info("match=%s role=%s fetched=%d sources=%s",
-                    match_id, role, len(track_ids), sources)
+                    security.digest(match_id), role, len(track_ids), sources)
 
     with db_session() as db:
         try:
@@ -250,7 +322,113 @@ def oauth_callback():
             return render_template("match_error.html", message=str(exc)), 409
 
     _remember_participation(match_id, role)
+    _remember_identity(profile.spotify_id)
     return redirect(url_for("match_page", match_id=match_id))
+
+
+# ── history and public sharing ───────────────────────────────────────────────
+
+@app.route("/me/matches")
+def my_matches():
+    """Every match this Spotify account has been in."""
+    me = _who()
+    if me is None:
+        return redirect(url_for("login_redirect"))
+
+    with db_session() as db:
+        rows = sharing.history(db, me)
+        view = [{
+            "match_id": r.match.id,
+            "status": r.match.status,
+            "created_at": r.match.created_at,
+            "them_name": (r.them.display_name if r.them else None),
+            "them_photo": (r.them.photo_url if r.them else None),
+            "percentile": (matching.result_for(r.match) or {}).get("percentile"),
+            "shareable": r.shareable,
+            "share_url": public_link(r.card.token) if r.shared else None,
+            "share_details": r.card.include_details if r.shared else False,
+        } for r in rows]
+
+    return render_template("my_matches.html", matches=view)
+
+
+@app.route("/m/<match_id>/share", methods=["POST"])
+def share_match(match_id: str):
+    """Mint a public link, or replace the one that exists.
+
+    POST rather than GET: it creates a capability and destroys another, and
+    a link-prefetcher must not be able to rotate someone's share link by
+    following a URL.
+    """
+    me = _who()
+    if me is None:
+        return redirect(url_for("login_redirect"))
+    if not _csrf_ok():
+        return render_template(
+            "match_error.html",
+            message="That request could not be verified. Please try again."), 400
+
+    include = request.form.get("include_details") == "on"
+    with db_session() as db:
+        try:
+            match = matching.get_match(db, match_id)
+            sharing.create_card(db, match, me, include_details=include)
+        except (matching.MatchError, sharing.ShareError) as exc:
+            return render_template("match_error.html", message=str(exc)), 403
+
+    return redirect(url_for("match_page", match_id=match_id))
+
+
+@app.route("/m/<match_id>/unshare", methods=["POST"])
+def unshare_match(match_id: str):
+    """Take it down.
+
+    `scope=all` is the other participant's veto: you can publish a result
+    that is half mine, so I must be able to unpublish it. Anything less is
+    not a veto.
+    """
+    me = _who()
+    if me is None:
+        return redirect(url_for("login_redirect"))
+    if not _csrf_ok():
+        return render_template(
+            "match_error.html",
+            message="That request could not be verified. Please try again."), 400
+
+    scope = request.form.get("scope", "mine")
+    with db_session() as db:
+        try:
+            match = matching.get_match(db, match_id)
+            if scope == "all":
+                sharing.revoke_all(db, match, me)
+            else:
+                sharing.revoke_mine(db, match, me)
+        except (matching.MatchError, sharing.ShareError) as exc:
+            return render_template("match_error.html", message=str(exc)), 403
+
+    return redirect(url_for("match_page", match_id=match_id))
+
+
+@app.route("/s/<token>")
+def public_card(token: str):
+    """The posted link. Read-only, revocable, and deliberately thin.
+
+    No Spotify login, no session, no join. Someone arriving here from a
+    group chat can see a score and two names and nothing else, unless the
+    person who posted it opted into showing more.
+    """
+    with db_session() as db:
+        try:
+            card = sharing.load_card(db, token)
+        except sharing.ShareError as exc:
+            return render_template("match_error.html", message=str(exc)), 404
+
+        card.views += 1
+        db.commit()
+        view = sharing.public_view(card)
+
+    return render_template("share_card.html", url=public_link(token),
+                           text=sharing.share_text(view), **view)
 
 
 # ── compatibility with the old URLs ──────────────────────────────────────────

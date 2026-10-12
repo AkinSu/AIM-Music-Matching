@@ -240,3 +240,95 @@ footer p {
   .nav__links { gap: 12px; font-size: .9rem; }
   main.card { border-radius: 14px; }
 }
+
+/* ── sharing and history ─────────────────────────────────────────────────── */
+
+.pair-names {
+    margin: .2rem 0 1rem;
+    line-height: 1.2;
+}
+
+.share-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+    margin: .75rem 0;
+}
+
+/* Buttons inside a form must not inherit the form's block layout, or the
+   three share controls stack instead of sitting in a row. */
+.share-row form,
+.history__actions form {
+    display: inline;
+    margin: 0;
+}
+
+.copy-field {
+    display: block;
+    margin: .75rem 0;
+}
+
+.copy-field input {
+    width: 100%;
+    box-sizing: border-box;      /* or the padding pushes it past the card */
+    padding: .6rem .7rem;
+    font: inherit;
+    font-size: .9rem;
+    color: inherit;
+    background: rgba(0, 0, 0, .04);
+    border: 1px solid rgba(0, 0, 0, .12);
+    border-radius: 8px;
+}
+
+.check {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    margin: .6rem 0;
+    font-size: .95rem;
+}
+
+.history {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0;
+}
+
+.history__row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    grid-template-areas:
+        "who score actions"
+        "link link   link";
+    gap: .6rem 1rem;
+    align-items: center;
+    padding: .9rem 0;
+    border-top: 1px solid rgba(0, 0, 0, .1);
+}
+
+.history__who     { grid-area: who; display: flex; gap: .7rem; align-items: center; }
+.history__score   { grid-area: score; }
+.history__actions { grid-area: actions; display: flex; gap: .4rem; flex-wrap: wrap; }
+.history__link    { grid-area: link; margin: 0; }
+
+.history__who img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.history__who div { display: flex; flex-direction: column; }
+
+.small-score { font-size: 1.6rem; }
+
+/* One column on a phone: three columns of controls do not fit beside a name,
+   and this page is mostly opened from a text message. */
+@media (max-width: 560px) {
+    .history__row {
+        grid-template-columns: 1fr;
+        grid-template-areas: "who" "score" "actions" "link";
+        justify-items: start;
+    }
+}

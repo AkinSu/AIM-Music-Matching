@@ -84,12 +84,25 @@ def test_the_invitee_session_holds_nothing_about_the_inviter(app, spotify, db):
     match_id = match_id_from(oauth_roundtrip(first, "/login", "a-code")[0])
     oauth_roundtrip(second, f"/m/{match_id}/join", "b-code")
 
-    for client, role in ((first, Role.INVITER), (second, Role.INVITED)):
+    for client, role, code in ((first, Role.INVITER, "a-code"),
+                               (second, Role.INVITED, "b-code")):
         with client.session_transaction() as s:
-            assert dict(s) == {f"role:{match_id}": role}
+            # Exactly two keys, and both are about *this* browser's own
+            # person: which seat they hold, and who they are. Nothing about
+            # the other participant, which is the regression being guarded.
+            assert dict(s) == {f"role:{match_id}": role,
+                               "spotify_id": f"sp-{code}"}
 
 
-def test_a_third_person_with_the_link_sees_the_result_but_is_not_in_it(app, spotify, db):
+def test_a_third_person_with_the_link_gets_nothing(app, spotify, db):
+    """This test used to assert the opposite, and that was the bug.
+
+    The invite link is the one URL in this product that gets texted around,
+    and it used to render the finished result to anyone holding it. Nobody
+    chose to publish that. Results are participants-only now; publishing is
+    a separate, revocable link at /s/<token> that someone has to press a
+    button to create. See tests/test_sharing.py.
+    """
     seed_features(db, track_ids("x", 120) + track_ids("y", 120))
     give_library(spotify, "a-code", "Ada", saved=track_ids("x", 120))
     give_library(spotify, "b-code", "Bo", saved=track_ids("y", 120))
@@ -99,8 +112,10 @@ def test_a_third_person_with_the_link_sees_the_result_but_is_not_in_it(app, spot
     oauth_roundtrip(second, f"/m/{match_id}/join", "b-code")
 
     page = bystander.get(f"/m/{match_id}")
-    assert page.status_code == 200
-    assert "82.4" in page.get_data(as_text=True)
+    assert page.status_code == 403
+    body = page.get_data(as_text=True)
+    assert "82.4" not in body
+    assert "Ada" not in body and "Bo" not in body, "not even who is in it"
     with bystander.session_transaction() as s:
         assert dict(s) == {}, "looking at a link must not enrol you in the match"
 

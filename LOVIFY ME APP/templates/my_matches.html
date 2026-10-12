@@ -1,0 +1,76 @@
+{% extends "_match_base.html" %}
+{% block title %}Your matches{% endblock %}
+{% block content %}
+
+<h1>Your matches</h1>
+
+{% if not matches %}
+  <p class="lead">You have not matched with anyone yet.</p>
+  <a class="button primary" href="{{ url_for('login_redirect') }}">Start a match</a>
+{% else %}
+
+<p class="small">
+  Every comparison this Spotify account has been part of. Results are private
+  to the two of you unless you publish one.
+</p>
+
+<ul class="history">
+{% for m in matches %}
+  <li class="history__row">
+    <div class="history__who">
+      {% if m.them_photo %}<img src="{{ m.them_photo }}" alt="">{% endif %}
+      <div>
+        <strong>{{ m.them_name or "Waiting for someone to join" }}</strong>
+        <span class="small">{{ m.created_at.strftime("%d %b %Y") }}</span>
+      </div>
+    </div>
+
+    <div class="history__score">
+      {% if m.percentile is not none %}
+        <span class="score__number small-score">{{ m.percentile }}<sup>th</sup></span>
+      {% else %}
+        <span class="small">{{ m.status }}</span>
+      {% endif %}
+    </div>
+
+    <div class="history__actions">
+      <a class="button" href="{{ url_for('match_page', match_id=m.match_id) }}">Open</a>
+
+      {% if m.shareable %}
+        {% if m.share_url %}
+          {#
+            Already public. Two controls, because they are different acts:
+            replacing the link (the old one dies, the new one is yours to
+            send to someone else) and taking it down entirely.
+          #}
+          <form method="post" action="{{ url_for('share_match', match_id=m.match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if m.share_details %}<input type="hidden" name="include_details" value="on">{% endif %}
+            <button class="button" type="submit">New link</button>
+          </form>
+          <form method="post" action="{{ url_for('unshare_match', match_id=m.match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="button" type="submit">Take down</button>
+          </form>
+        {% else %}
+          <form method="post" action="{{ url_for('share_match', match_id=m.match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="button primary" type="submit">Share</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    {% if m.share_url %}
+      <label class="copy-field history__link">
+        <span class="small">Public link — anyone can open this</span>
+        <input type="text" readonly value="{{ m.share_url }}">
+      </label>
+    {% endif %}
+  </li>
+{% endfor %}
+</ul>
+
+<a class="button primary" href="{{ url_for('login_redirect') }}">Start another match</a>
+{% endif %}
+{% endblock %}

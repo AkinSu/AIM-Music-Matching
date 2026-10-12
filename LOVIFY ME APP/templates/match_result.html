@@ -111,6 +111,60 @@
 
 {% endif %}
 
+{% if is_participant and status == "complete" %}
+  <hr>
+  <h2>Share this result</h2>
+
+  {% if share_card_url %}
+    <p class="small">
+      This match is public. The link below shows your two names and the score
+      {%- if share_card_details %}, plus the artists and genres you share{% endif %}.
+      It does not let anyone join anything, and it is not the link you used
+      to invite each other.
+    </p>
+    <label class="copy-field">
+      <input type="text" readonly value="{{ share_card_url }}">
+    </label>
+    <div class="share-row">
+      <a class="button" href="{{ share_card_url }}">Open it</a>
+      {#
+        "New link" is the rotation Akin asked for: a link that has escaped
+        into a group chat cannot be recalled, so replacing it is the only
+        recall a bearer token can have. The old one stops working the
+        moment this is pressed.
+      #}
+      <form method="post" action="{{ url_for('share_match', match_id=match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if share_card_details %}<input type="hidden" name="include_details" value="on">{% endif %}
+        <button class="button" type="submit">Replace with a new link</button>
+      </form>
+      <form method="post" action="{{ url_for('unshare_match', match_id=match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="button" type="submit">Take it down</button>
+      </form>
+    </div>
+  {% else %}
+    <p class="small">
+      This result is private to the two of you. Publishing it creates a
+      separate, read-only link you can post anywhere — and you can replace or
+      delete that link later without affecting this page.
+    </p>
+    <form method="post" action="{{ url_for('share_match', match_id=match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="check">
+        <input type="checkbox" name="include_details">
+        Also show the artists and genres we have in common
+      </label>
+      <button class="button primary" type="submit">Create a public link</button>
+    </form>
+  {% endif %}
+
+  <p class="small">
+    Either of you can take a public link down, including one the other person
+    made. It affects this match only.
+  </p>
+{% endif %}
+
 {% if not is_participant %}
   <p class="small">
     You are viewing someone else's match through their link. Nothing here is

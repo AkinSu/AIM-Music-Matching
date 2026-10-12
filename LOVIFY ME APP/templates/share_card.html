@@ -1,0 +1,74 @@
+{% extends "_match_base.html" %}
+{% block title %}
+  {% if names|length == 2 %}{{ names[0] }} & {{ names[1] }}{% else %}A match{% endif %} on Lovify
+{% endblock %}
+{% block content %}
+
+{#
+  The public card. Everything here was chosen by sharing.public_view(), which
+  builds its output by naming fields rather than by deleting them from the
+  full result -- so a field someone adds to the scorer tomorrow does not
+  quietly appear on the open internet.
+
+  Not shown, ever: the match id, either person's photo, their Spotify ids,
+  how many tracks we read, or the component breakdown.
+#}
+
+<p class="small">A music compatibility result, shared publicly.</p>
+
+<h1 class="pair-names">
+  {% if names|length == 2 %}{{ names[0] }} &amp; {{ names[1] }}{% else %}A Lovify match{% endif %}
+</h1>
+
+{% if percentile is not none %}
+  <div class="score">
+    <span class="score__number">{{ percentile }}<sup>th</sup></span>
+    <span class="score__label">percentile</span>
+  </div>
+  <p class="lead">{{ interpretation }}</p>
+  <p class="small">
+    Measured against randomly paired listeners, not scored out of 100 — half
+    of all random pairs land below the 50th.
+  </p>
+{% else %}
+  <p class="lead">{{ interpretation or "These two compared their music taste." }}</p>
+{% endif %}
+
+{% if include_details and shared_artists %}
+  <h2>Artists they both listen to</h2>
+  <ul class="chips">
+    {% for artist in shared_artists %}<li>{{ artist }}</li>{% endfor %}
+  </ul>
+{% endif %}
+
+{% if include_details and top_shared_genres %}
+  <h2>Where they overlap</h2>
+  <ul class="chips">
+    {% for genre in top_shared_genres %}<li>{{ genre }}</li>{% endfor %}
+  </ul>
+{% endif %}
+
+<hr>
+
+<h2>Share this</h2>
+<div class="share-row">
+  <a class="button" target="_blank" rel="noopener noreferrer"
+     href="https://twitter.com/intent/tweet?text={{ text|urlencode }}&url={{ url|urlencode }}">Post on X</a>
+  <a class="button" target="_blank" rel="noopener noreferrer"
+     href="https://www.facebook.com/sharer/sharer.php?u={{ url|urlencode }}">Facebook</a>
+  <a class="button" target="_blank" rel="noopener noreferrer"
+     href="https://api.whatsapp.com/send?text={{ (text ~ ' ' ~ url)|urlencode }}">WhatsApp</a>
+</div>
+
+<label class="copy-field">
+  <span class="small">Link — paste it anywhere, including an Instagram story</span>
+  <input type="text" readonly value="{{ url }}">
+</label>
+
+<a class="button primary" href="{{ url_for('home_page') }}">Compare your own music taste</a>
+
+<p class="small">
+  Either person in this match can take this page down at any time, and doing
+  so breaks this link for everyone.
+</p>
+{% endblock %}

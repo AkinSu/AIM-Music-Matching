@@ -23,7 +23,8 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
-    DateTime, Float, ForeignKey, Index, Integer, String, Text, create_engine,
+    Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text,
+    create_engine,
 )
 from sqlalchemy.orm import (
     DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker,
@@ -187,6 +188,63 @@ class Participant(Base):
         clean = [t for t in dict.fromkeys(ids) if t]
         self.track_ids = "\n".join(clean)
         self.n_tracks = len(clean)
+
+
+def new_share_token() -> str:
+    """Unguessable token for a public share card.
+
+    Deliberately NOT the match id. The match id is a capability to *join*;
+    this is a capability to *read a finished result*, and the two must be
+    separable or the join link can never be made public and the public link
+    can never be revoked. Rotating one must not invalidate the other.
+    """
+    return secrets.token_urlsafe(16)
+
+
+class ShareCard(Base):
+    """A public, revocable view of one finished match.
+
+    The product reason: people want to post these. The security reason: once
+    results are shareable, "anyone with the invite link can see the result"
+    stops being a shortcut and becomes a leak, because the invite link is
+    also the link that lets you *join*. So results move behind participant
+    identity, and anything public goes through a token that exists only
+    because a participant pressed a button.
+
+    One active card per (match, sharer). Rotating issues a new token and
+    revokes the old one, so a link that has escaped can be killed without
+    taking down the other participant's link.
+    """
+
+    __tablename__ = "share_cards"
+
+    token: Mapped[str] = mapped_column(String(43), primary_key=True,
+                                       default=new_share_token)
+    match_id: Mapped[str] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"),
+                                          index=True)
+
+    # Who pressed share. Not a foreign key to participants.id: the point of
+    # recording it is to answer "is this still mine to revoke" after the
+    # participant row may have been swept, and a Spotify id survives that.
+    created_by: Mapped[str] = mapped_column(String(64), index=True)
+
+    # Off by default. The score and the two names are the thing people want
+    # to post; shared artists and genres are a good deal more personal, and
+    # they are also the surface that made the takeover bug worth exploiting.
+    # Opt in per card, never per account.
+    include_details: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True),
+                                                 default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True),
+                                                        nullable=True)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+
+    match: Mapped[Match] = relationship()
+
+    @property
+    def active(self) -> bool:
+        return self.revoked_at is None
 
 
 class TrackFeature(Base):

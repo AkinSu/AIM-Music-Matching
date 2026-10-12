@@ -14,6 +14,9 @@
         </a>
         <nav>
             <ul class="nav__links">
+                {% if session.get('spotify_id') %}
+                  <li><a href="{{ url_for('my_matches') }}">Your matches</a></li>
+                {% endif %}
                 <li><a href="{{ url_for('about_page') }}">About</a></li>
                 <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
             </ul>
@@ -23,6 +26,9 @@
     <main class="card">
         {% block content %}{% endblock %}
     </main>
+
+    {# No inline script anywhere: script-src in the CSP has no 'unsafe-inline'. #}
+    <script src="{{ url_for('static', filename='lovify.js') }}?v=1" defer></script>
 
     <footer>
         <p>A UT-Dallas AIS project. Your Spotify login is used once to read your
