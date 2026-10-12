@@ -69,10 +69,30 @@ def join_match(db, match: Match, role: str, profile, track_ids: list[str],
 
     participant = match.participant(role)
     if participant is None:
+        # First claim on this role. Whoever lands here owns it from now on.
         participant = Participant(match_id=match.id, role=role,
                                   spotify_id=profile.spotify_id)
         db.add(participant)
         match.participants.append(participant)
+    elif participant.spotify_id != profile.spotify_id:
+        # A DIFFERENT Spotify account trying to take an occupied seat.
+        #
+        # This used to overwrite, which made the share link far more powerful
+        # than intended: anyone holding it could evict a participant -- after
+        # the match was complete -- and re-score in their place. Repeatedly.
+        #
+        # That turned the results page into an oracle. Each takeover asks
+        # "does the other person listen to X?" and `shared_artists` answers.
+        # Reproduced: six probes recovered a victim's library exactly, from
+        # one reused account and nothing but the link. For a product about
+        # comparing music with someone you like, that is the attack.
+        #
+        # The retry case the old comment protected -- lost signal mid-redirect,
+        # a refresh -- is the branch below: the SAME account re-joining still
+        # overwrites its own row freely.
+        raise MatchError(
+            "Someone has already joined this invitation. Each link compares "
+            "exactly two people. Ask them to send you a new one.")
 
     participant.spotify_id = profile.spotify_id
     participant.display_name = profile.display_name
