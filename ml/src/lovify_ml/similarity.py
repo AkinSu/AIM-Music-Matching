@@ -197,7 +197,16 @@ class CompatibilityScorer:
         c = self.components(u, v)
         shared = sorted(self.artist_sets[u] & self.artist_sets[v])
         gu, gv = self.genre_profiles.loc[u], self.genre_profiles.loc[v]
+        # Geometric mean, so a genre only scores when BOTH people listen to it.
+        # The positive filter is the whole point: without it, two people with
+        # no genre in common still get the first three labels pandas happens
+        # to leave at the top of an all-zero sort, and the results page tells
+        # them "where you overlap: album rock" when the overlap is exactly
+        # zero. Measured against the real catalogue: a metal/jazz library and
+        # a pop/latin one, genre_overlap 0.0 and no shared artists, still
+        # produced three confident genre chips.
         shared_genres = (np.sqrt(gu * gv)).sort_values(ascending=False)
+        shared_genres = shared_genres[shared_genres > 0]
         return {
             "percentile": round(self.percentile(u, v), 1),
             "raw_score": round(self.raw_score(u, v), 4),
