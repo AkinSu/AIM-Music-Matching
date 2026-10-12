@@ -4,29 +4,25 @@ How the Lovify web app is built, and why. This is the decision record the rest o
 team builds against — if you are about to write code that contradicts something here,
 change this document first and say why.
 
-Written 2026-10-12, against `lovify.py` as it stands on `main` (227 lines, 9 routes).
+Written 2026-10-12 against the old `lovify.py` on `main` (227 lines, 9 routes), and
+revised the same day against the rewrite on `agent/app-match-flow`, which is what
+the tables below now describe. Where the two differ, the revision says so.
 
 ---
 
-## 0. Two blockers to clear before any of this can be built
+## 0. Blockers — both cleared
 
-**`ml/` is not on `main`.** It exists only on `agent/ml-foundation` (PR #2, unmerged).
-This branch cannot `import lovify_ml` because the source is not in the tree. Everything
-below assumes PR #2 has landed. **Merge it first.** Verified:
+This section listed two things that had to land before the design below could be
+built. Both have. It is kept rather than deleted so the branch history stays readable.
 
-```
-main                  NO ml/
-agent/ml-foundation   has ml/
-agent/app-match-flow  NO ml/
-```
+**`ml/` is on `main`** (PR #2, merged). `import lovify_ml` resolves. Note that the
+`ml/artifacts`, `ml/data` and `ml/html` directories in a working tree are gitignored
+residue, not tracked source — do not reason about what is on a branch from `ls`.
 
-The leftover `ml/artifacts`, `ml/data`, `ml/html` directories you see on other branches
-are gitignored working-tree residue, not tracked source. They will mislead you.
-
-**`SECRET_KEY` is still hardcoded on `main`.** `lovify.py:17` falls back to a literal
-that is published in this repository's git history. The fix is PR #1, also unmerged.
-Merge that too; the match flow below puts more trust in the session cookie than the
-current app does, and that trust is unearned while the signing key is public.
+**`SECRET_KEY` is no longer hardcoded** (PR #1, merged). `main` now reads it from the
+environment and raises on startup if it is missing, rather than falling back to a
+literal published in this repository's git history. That matters here because the
+match flow below puts more trust in the session cookie than the old app did.
 
 ---
 
@@ -75,22 +71,33 @@ both participants attach themselves to.
 | # | Request | Server does | State after |
 |---|---|---|---|
 | 1 | `GET /` | Render landing | — |
-| 2 | `GET /login` | New `oauth_state` in session; redirect to Spotify with `state=<oauth_state>` | `session['oauth_state']` |
-| 3 | `GET /callback?code&state` | Verify `state == session['oauth_state']`; exchange code; fetch profile + top tracks; **discard tokens**; create `Match` + `Participant(role='inviter')` | DB row; `session['participant_id']` |
-| 4 | `GET /m/<match_id>` | A's page: share link, status "waiting for them" | — |
-| 5 | `GET /m/<match_id>/join` | B's page: "Akin wants to compare…", explains what will be read, button to sign in | — |
-| 6 | `GET /login?m=<match_id>` | New `oauth_state`; store `pending_match` in B's session; redirect to Spotify | `session['oauth_state']`, `session['pending_match']` |
-| 7 | `GET /callback?code&state` | Verify state; exchange; fetch; discard tokens; `Participant(role='invitee')` attached to `pending_match`; mark match `complete`; compute and store result | DB rows; `session['participant_id']` |
-| 8 | `GET /m/<match_id>` | Both see the result (A on refresh or poll) | — |
+| 2 | `GET /login` | Create the `Match` row, then mint a signed `state` carrying `(nonce, match_id, role=inviter)`; redirect to Spotify | DB row; `session['oauth_nonce']` |
+| 3 | `GET /callback?code&state` | Verify the state's signature and nonce; exchange code; fetch profile + library; **discard tokens**; `Participant(role='inviter')` | DB row; `session['role:<match_id>']` |
+| 4 | `GET /m/<match_id>` | A's page: share link, "waiting for them" | — |
+| 5 | `GET /m/<match_id>` | B, who is not in the match yet, gets the invite page instead: "Akin wants to compare…", what will be read, a button | — |
+| 6 | `GET /m/<match_id>/join` | Mint a signed `state` carrying `(nonce, match_id, role=invited)`; redirect to Spotify | `session['oauth_nonce']` |
+| 7 | `GET /callback?code&state` | Same route as step 3; the role comes out of the verified state. Attach `Participant(role='invited')`, score, store the result | DB rows; `session['role:<match_id>']` |
+| 8 | `GET /m/<match_id>` | Both see the result | — |
 
-One `/callback` route, not two. The current `/redirect-user` and
-`/redirect-second-user` differ only in which session keys they write, which is exactly
-the distinction that disappears once a `Match` exists. **This halves the OAuth code and
-means one redirect URI to register with Spotify.**
+One `/callback` route, not two. The old `/redirect-user` and `/redirect-second-user`
+differed only in which session keys they wrote, which is exactly the distinction that
+disappears once a `Match` exists. **This halves the OAuth code and means one redirect
+URI to register with Spotify.**
 
-A does not poll by default. `/m/<id>` renders "waiting" and the page refreshes itself
-every 5s via `<meta http-equiv="refresh">`. That is crude and entirely adequate for two
-people who are usually texting each other anyway. See §9.
+**The match id and role travel in `state`, not in the session.** The original plan put
+`pending_match` in B's cookie; that was changed during implementation because the
+cookie is the one thing that is *not* shared across the two devices, and because
+`state` already has to exist for CSRF. It is HMAC-SHA256 signed with `SECRET_KEY` and
+verified in constant time, so a tampered match id or role is rejected before anything
+in it is read. See `oauth_state.py`. The session's remaining job is one key per match:
+`role:<match_id>`, which is how `/m/<id>` knows whether the viewer is a participant.
+
+Note also that `/m/<match_id>` serves three audiences — inviter, invitee, bystander —
+rather than the invite living at its own URL. One link to send, which is the point.
+
+A does not poll. `/m/<id>` renders "waiting" and asks the viewer to refresh. The
+plan here was a 5s `<meta http-equiv="refresh">`; the shipped template has the text
+and not the tag, so this is a real (small) gap rather than a decision. See §9.
 
 ---
 
@@ -103,7 +110,7 @@ SQLAlchemy over SQLite locally, Postgres in deployment. Three tables.
 | column | type | notes |
 |---|---|---|
 | `id` | `TEXT` PK | `secrets.token_urlsafe(16)`. **Not** a sequential int and not `uuid4().hex` in a URL you expect to be unguessable-by-inspection — 128 bits from `secrets`, which is what makes the share link safe to send over SMS |
-| `status` | `TEXT` | `pending` \| `complete` \| `expired` |
+| `status` | `TEXT` | one of six — see `MatchStatus` in `models.py` |
 | `created_at` | `TIMESTAMP` | |
 | `completed_at` | `TIMESTAMP` NULL | |
 | `result_json` | `TEXT` NULL | the `compatibility()` dict, serialised |
@@ -158,9 +165,16 @@ answers from disk in microseconds. Loaded once by a seed script, not at boot.
 
 ### Lifecycle
 
-- A match created and never joined sits at `pending`. A daily sweep marks anything
+- A match created and never joined sits at `waiting`. A daily sweep marks anything
   older than **7 days** `expired` and nulls `tracks_json` on its participants. Nobody
   needs week-old top-track lists, and holding them is a liability for no benefit.
+- The full set is `waiting`, `complete`, `insufficient`, `unresolved`, `expired`,
+  `failed` — six, not three. `insufficient` and `unresolved` are **outcomes, not
+  errors**: the pair did get an answer, and it was "we will not put a number on this".
+  They are the match-level mirror of `compatibility()`'s two non-`ok` statuses
+  (§ below), and a template that lumps them in with `failed` throws away the
+  distinction the scorer went to some trouble to make. `MatchStatus` in `models.py`
+  is the authority; this list is a convenience.
 - **Results are computed once, at completion, and stored** in `result_json`. They are
   not recomputed on page load. Both participants must see the same number, and
   recomputing against a retrained model would silently change it under them. The stored

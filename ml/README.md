@@ -56,8 +56,10 @@ cluster-grouped split with balanced accuracy:
 
 **A caution against our own earlier conclusion.** Notebook 01 demonstrates a leakage
 trap — duplicate tracks straddling a random split — and on synthetic data it is
-enormous: 81% on tracks seen in training against 9% on unseen ones. On the real scrape
-it almost vanishes: **14.2% seen against 12.3% unseen.**
+enormous: 81.0% on tracks seen in training against 7.0% on unseen ones. On the real
+scrape it almost vanishes: **13.1% seen against 10.7% unseen**, a gap of 2.4 points.
+(Both are raw accuracy on one split, which is what the probe measures; across six
+seeds, 13.2% ± 0.1 seen and 10.9% ± 0.5 unseen.)
 
 Real zodiac playlists turn out to overlap far less than the generator assumed. Only
 25.2% of tracks appear more than once (the generator predicted 76.4%), and when a track
