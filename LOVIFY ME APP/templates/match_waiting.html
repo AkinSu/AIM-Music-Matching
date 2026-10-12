@@ -8,12 +8,21 @@
     listening compares.
   </p>
 
-  <div class="link-row">
+  {#
+    `copy-field` rather than a hand-rolled row: static/lovify.js attaches
+    the select-on-tap and the copy button to every one of these. The inline
+    onclick that used to live here is blocked by the content security
+    policy, and correctly so -- the same rule stops injected script.
+  #}
+  <label class="copy-field link-row">
     <input type="text" id="share-url" value="{{ share_url }}" readonly>
-    <button class="button" onclick="
-      navigator.clipboard.writeText(document.getElementById('share-url').value);
-      this.textContent='Copied';">Copy</button>
-  </div>
+  </label>
+
+  <p class="small">
+    This is a private invitation, not a link to post. It lets whoever opens
+    it take a seat in your match. There is a separate, public link for
+    sharing a finished result.
+  </p>
 
   {% if you %}
     <div class="person">
