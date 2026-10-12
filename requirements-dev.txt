@@ -1,0 +1,17 @@
+# Test-only dependencies. Deliberately NOT in requirements-app.txt.
+#
+# requirements-app.txt is what the shipped image installs, and a web server
+# has no business carrying a test runner. But the app suite could not run in
+# the container at all -- `python -m pytest` answered "No module named
+# pytest", and the only mention of pytest anywhere was a comment in
+# "LOVIFY ME APP/requirements.txt" telling you to install it yourself. So the
+# 46 app tests had never once been run against the container's own Python,
+# its real Postgres, or the real model artifact.
+#
+# The Dockerfile's `dev` stage installs this on top of the runtime stage;
+# docker-compose builds that stage, a plain `docker build` does not. The
+# shipped image is unchanged.
+
+-r requirements-app.txt
+
+pytest==8.3.4

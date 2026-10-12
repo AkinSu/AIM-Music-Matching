@@ -69,3 +69,22 @@ EXPOSE 8080
 # Two workers: enough for a demo, small enough that each loading a copy of the
 # model does not exhaust an 8GB laptop.
 CMD gunicorn --bind "0.0.0.0:${PORT:-8080}" --workers 2 --timeout 120 lovify:app
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Stage 3 — dev
+# ═══════════════════════════════════════════════════════════════════════════
+# Runtime plus a test runner. Compose builds this (`target: dev`); a plain
+# `docker build .` stops at `runtime` and ships without pytest, which is the
+# point of making it a separate stage rather than a line in requirements-app.
+#
+# It exists because the app suite had no way to run inside the container, so
+# the one seam that matters -- the app calling the real model against the real
+# database -- was only ever exercised by a stub.
+FROM runtime AS dev
+
+USER root
+COPY requirements-app.txt requirements-dev.txt ./
+RUN pip install --no-cache-dir -r requirements-dev.txt
+USER app
+WORKDIR /app/web

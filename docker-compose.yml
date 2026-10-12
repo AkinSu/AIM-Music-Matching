@@ -1,8 +1,18 @@
 # Local development stack. `make up` and you have a running app and database.
 #
+# The project name is set below rather than left to Compose, which derives it
+# from the directory name. That default is a trap: a second clone in a
+# directory of the same name silently attaches to the first stack's containers
+# and volume, and a throwaway end-to-end run came within one `make fresh` of
+# dropping the seeded database that way. Naming it makes the sharing explicit,
+# and COMPOSE_PROJECT_NAME is the one knob that opts a throwaway clone out:
+#     COMPOSE_PROJECT_NAME=lovify-scratch WEB_HOST_PORT=8099 DB_HOST_PORT=5499 make up
+#
 # Nothing here is hardcoded that a deployment would need to change: the app
 # reads DATABASE_URL, PORT, SECRET_KEY and the Spotify credentials from the
 # environment, exactly as Railway supplies them.
+
+name: ${COMPOSE_PROJECT_NAME:-lovify}
 
 services:
   db:
@@ -32,6 +42,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # The dev stage is the runtime image plus pytest. Local only -- a plain
+      # `docker build .` stops at `runtime`, so nothing extra ships.
+      target: dev
     depends_on:
       db:
         # service_healthy, not service_started. Without this the app boots

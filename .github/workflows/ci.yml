@@ -44,3 +44,42 @@ jobs:
       - name: Check notebooks
         working-directory: ml
         run: python scripts/ci_notebooks.py
+
+  app-tests:
+    name: App tests
+    runs-on: ubuntu-latest
+    # The 46 tests in "LOVIFY ME APP/tests" were never run by CI. Only the ml
+    # suite was, so every change to the match flow, the OAuth state signing
+    # and the share link merged unverified -- including the one that made the
+    # share link a seat-takeover oracle, which a human found by reading.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lovify
+          POSTGRES_PASSWORD: lovify
+          POSTGRES_DB: lovify
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lovify -d lovify"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install
+        run: pip install -r requirements-dev.txt
+
+      # The suite's own conftest builds the schema; it needs a key because
+      # lovify.py refuses to import without one, by design.
+      - name: App tests
+        working-directory: "LOVIFY ME APP"
+        env:
+          SECRET_KEY: ci-only-not-a-real-key
+          DATABASE_URL: postgresql+psycopg://lovify:lovify@localhost:5432/lovify
+          PYTHONPATH: ${{ github.workspace }}/ml/src
+        run: python -m pytest -q tests
