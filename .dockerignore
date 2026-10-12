@@ -1,0 +1,54 @@
+# Keep the build context small. This file is the difference between a 3-second
+# context upload and a 400MB one.
+#
+# ml/data alone holds ~328MB (feature_store.csv 135M, tracks.csv 104M,
+# zodiac.csv 63M, artist_genres.csv 26M). None of it belongs in an image:
+# the feature store is loaded into Postgres by scripts/seed_db.py, and the
+# rest is analysis input that the running app never reads.
+
+# ── data, the big one ────────────────────────────────────────────────────────
+ml/data/
+ml/artifacts/
+ml/html/
+**/*.csv
+**/*.parquet
+**/*.joblib
+
+# ── virtualenvs and caches ──────────────────────────────────────────────────
+ml/.venv/
+.venv/
+venv/
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+.mypy_cache/
+.ruff_cache/
+
+# ── notebooks: committed with outputs, megabytes of embedded PNGs, and the
+#    running app never imports them ────────────────────────────────────────────
+ml/notebooks/
+
+# ── vcs and local tooling ───────────────────────────────────────────────────
+.git/
+.github/
+.gitignore
+.dockerignore
+
+# ── secrets. Belt and braces: these are gitignored too, but a build context is
+#    assembled from the filesystem, not from git ───────────────────────────────
+.env
+**/.env
+!.env.example
+
+# ── os and editor noise ─────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# ── docs and scratch ────────────────────────────────────────────────────────
+docs/
+*.md
+!README.md

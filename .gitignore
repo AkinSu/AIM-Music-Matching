@@ -5,3 +5,8 @@
 flask_session
 __pycache__/
 *.pyc
+
+# Local SQLite databases. lovify.db is the default DATABASE_URL and holds
+# real people's match data; it must never reach the repository.
+*.db
+*.sqlite3

@@ -1,0 +1,122 @@
+{% extends "_match_base.html" %}
+{% block title %}Your music compatibility{% endblock %}
+{% block content %}
+
+{#
+  One template for every ending, because every ending is a real ending.
+
+  "Not enough listening history" and "we have no audio data for this music"
+  are not errors -- they are the scorer declining to invent a number, which
+  happens to ordinary people with ordinary Spotify accounts. Each gets a
+  screen that says what happened and what, if anything, would change it.
+  Only `failed` is an actual fault on our side.
+#}
+
+<div class="pair">
+  {% for p in [you, them] if p %}
+    <div class="person">
+      {% if p.user_photo %}<img src="{{ p.user_photo }}" alt="">{% endif %}
+      <div>
+        <strong>{{ p.user_name or "Someone" }}</strong>
+        <span class="small">{{ p.n_tracks }} tracks read</span>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% if status == "complete" and result and result.percentile is not none %}
+
+  <div class="score">
+    <span class="score__number">{{ result.percentile }}<sup>th</sup></span>
+    <span class="score__label">percentile</span>
+  </div>
+  <p class="lead">{{ result.interpretation }}</p>
+  <p class="small">
+    That is measured against randomly paired listeners, not against a score
+    out of 100 — half of all random pairs land below the 50th.
+  </p>
+
+  {% if result.shared_artists %}
+    <h2>Artists you both listen to</h2>
+    <ul class="chips">
+      {% for artist in result.shared_artists %}<li>{{ artist }}</li>{% endfor %}
+    </ul>
+    {% if result.n_shared_artists > result.shared_artists|length %}
+      <p class="small">and {{ result.n_shared_artists - result.shared_artists|length }} more.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if result.top_shared_genres %}
+    <h2>Where you overlap</h2>
+    <ul class="chips">
+      {% for genre in result.top_shared_genres %}<li>{{ genre }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if result.components %}
+    <h2>What went into it</h2>
+    <table class="components">
+      {% for name, value in result.components.items() %}
+        <tr>
+          <th scope="row">{{ name.replace("_", " ") }}</th>
+          <td>
+            <span class="bar"><span class="bar__fill"
+              style="width: {{ (value * 100)|round|int if value <= 1 else 100 }}%"></span></span>
+          </td>
+          <td class="num">{{ "%.2f"|format(value) }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+{% elif status == "insufficient" %}
+
+  <h1>Not enough listening history yet</h1>
+  <p class="lead">{{ result.interpretation if result else
+     "One of you does not have enough tracks we can read to score this fairly." }}</p>
+  <p class="small">
+    We will not guess. Below about {{ result.min_required if result else 100 }} tracks the
+    number is biased by tens of percentile points in a direction neither of
+    you could spot, so a wrong answer would look exactly like a right one.
+  </p>
+
+  {% if result and result.shared_artists %}
+    <h2>Artists you both listen to</h2>
+    <p class="small">These are exact — no estimate involved.</p>
+    <ul class="chips">
+      {% for artist in result.shared_artists %}<li>{{ artist }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+{% elif status == "unresolved" %}
+
+  <h1>We could not read that music</h1>
+  <p class="lead">{{ result.interpretation if result else
+     "We have no audio data for the tracks we found." }}</p>
+  <p class="small">
+    Our audio database was built before Spotify withdrew the endpoint that
+    produced it in November 2024, so nothing recorded since can be added.
+    Newer and more obscure music is simply missing, and that is a limit of
+    ours, not of your taste.
+  </p>
+
+{% else %}
+
+  <h1>We could not finish the comparison</h1>
+  <p class="lead">
+    {{ result.interpretation if result else
+       "Something on our side went wrong while scoring this match." }}
+  </p>
+  <p class="small">Your data was not kept. Starting a new match is safe to try.</p>
+
+{% endif %}
+
+{% if not is_participant %}
+  <p class="small">
+    You are viewing someone else's match through their link. Nothing here is
+    linked to your Spotify account.
+  </p>
+{% endif %}
+
+<a class="button primary" href="{{ url_for('home_page') }}">Start your own match</a>
+{% endblock %}

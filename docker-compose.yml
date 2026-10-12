@@ -1,0 +1,81 @@
+# Local development stack. `make up` and you have a running app and database.
+#
+# Nothing here is hardcoded that a deployment would need to change: the app
+# reads DATABASE_URL, PORT, SECRET_KEY and the Spotify credentials from the
+# environment, exactly as Railway supplies them.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lovify}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lovify}
+      POSTGRES_DB: ${POSTGRES_DB:-lovify}
+    ports:
+      # Exposed so you can point TablePlus/psql at it from the host. 5433 on the
+      # host side because a lot of people already have a local Postgres on 5432.
+      - "${DB_HOST_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready, not a port check: Postgres accepts TCP for several seconds
+      # before it will answer a query, and seeding against it in that window
+      # fails in a way that looks like a bug in the seed script.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lovify} -d ${POSTGRES_DB:-lovify}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        # service_healthy, not service_started. Without this the app boots
+        # against a database that is not yet answering and dies on first query.
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://lovify:lovify@db:5432/lovify}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env - see .env.example}
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SCOPE: ${SCOPE:-user-top-read user-read-recently-played}
+      BASE_URL: ${BASE_URL:-http://127.0.0.1:8080}
+      PORT: 8080
+      FLASK_APP: lovify:app
+      FLASK_DEBUG: ${FLASK_DEBUG:-1}
+    ports:
+      - "${WEB_HOST_PORT:-8080}:8080"
+    volumes:
+      # Source mounted over the image copy so edits apply without rebuilding.
+      # Read-write on the app dir because Flask writes nothing but the reloader
+      # wants to stat freely; read-only on ml/src since the app only imports it.
+      - "./LOVIFY ME APP:/app/web"
+      - "./ml/src:/app/ml/src:ro"
+      - "./ml/tests:/app/ml/tests:ro"
+      - "./scripts:/app/scripts:ro"
+      # ml/data is deliberately excluded from the IMAGE (~328MB, see
+      # .dockerignore) but the seeder has to read feature_store.csv from
+      # somewhere. A bind mount gives the container access at runtime without
+      # any of it entering the build context or the shipped layers.
+      # Read-only: nothing in the stack should ever write to it.
+      - "./ml/data:/app/ml/data:ro"
+      # Saved models, same reasoning. Absent until someone runs notebook 04.
+      - "./ml/artifacts:/app/ml/artifacts:ro"
+    # Dev server, not gunicorn: --reload picks up edits. The Dockerfile CMD
+    # (gunicorn) is what production uses; this override is local-only.
+    command: >
+      flask --app lovify:app run --host 0.0.0.0 --port 8080 --reload
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/ > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  pgdata:

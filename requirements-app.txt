@@ -1,0 +1,34 @@
+# What the web container actually needs at runtime.
+#
+# Deliberately a third file rather than an edit to either existing one:
+#   LOVIFY ME APP/requirements.txt  -- owned by the app, Railway reads it
+#   ml/requirements.txt             -- owned by the ML work, includes jupyterlab,
+#                                      nbconvert and matplotlib, none of which a
+#                                      web server should be shipping
+#
+# This is the union of the app's needs and the subset of the ML stack required
+# to load and call a saved model, plus the database driver. Pinned so a build
+# today and a build next month produce the same image.
+
+# ── web ──────────────────────────────────────────────────────────────────────
+Flask==3.1.0
+Werkzeug==3.1.3
+gunicorn==21.2.0
+python-dotenv==1.0.0
+requests==2.32.3
+
+# ── database ────────────────────────────────────────────────────────────────
+# psycopg 3 with the binary wheel: no libpq build step, which keeps the builder
+# stage small and the build fast. Swap to psycopg[c] only if profiling says so.
+SQLAlchemy==2.0.36
+psycopg[binary]==3.2.3
+
+# ── ML runtime ──────────────────────────────────────────────────────────────
+# Needed to unpickle and call LovifyModels. scikit-learn in particular must be
+# the same minor version that wrote the artifact, or joblib.load warns and can
+# fail outright -- see ml/README.md.
+numpy>=2.0,<3
+pandas>=2.2,<4
+scikit-learn>=1.5,<2
+scipy>=1.13,<2
+joblib>=1.4

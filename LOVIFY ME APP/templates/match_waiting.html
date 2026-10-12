@@ -1,0 +1,32 @@
+{% extends "_match_base.html" %}
+{% block title %}Waiting for your match{% endblock %}
+{% block content %}
+  <h1>Send this link to someone</h1>
+
+  <p class="lead">
+    They open it, sign in with Spotify, and you will both see how your
+    listening compares.
+  </p>
+
+  <div class="link-row">
+    <input type="text" id="share-url" value="{{ share_url }}" readonly>
+    <button class="button" onclick="
+      navigator.clipboard.writeText(document.getElementById('share-url').value);
+      this.textContent='Copied';">Copy</button>
+  </div>
+
+  {% if you %}
+    <div class="person">
+      {% if you.user_photo %}<img src="{{ you.user_photo }}" alt="">{% endif %}
+      <div>
+        <strong>{{ you.user_name }}</strong>
+        <span class="small">{{ you.n_tracks }} top tracks read</span>
+      </div>
+    </div>
+  {% endif %}
+
+  <p class="small">
+    Nobody has joined yet. This page updates when they do — refresh after they
+    tell you they are done. The link works for 7 days.
+  </p>
+{% endblock %}

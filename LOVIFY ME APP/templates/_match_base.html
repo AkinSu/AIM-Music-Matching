@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>{% block title %}Lovify{% endblock %}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='match.css') }}?v=1">
+</head>
+<body>
+    <header>
+        <a class="logo" href="/">
+            <img src="{{ url_for('static', filename='images/lovify-me.svg') }}" alt="Lovify">
+        </a>
+        <nav>
+            <ul class="nav__links">
+                <li><a href="{{ url_for('about_page') }}">About</a></li>
+                <li><a href="https://www.aisutd.org/">UT-Dallas AIS</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main class="card">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>A UT-Dallas AIS project. Your Spotify login is used once to read your
+           top tracks — we never store your Spotify password or access tokens.</p>
+    </footer>
+</body>
+</html>
