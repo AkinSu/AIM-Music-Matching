@@ -28,11 +28,20 @@ os.environ["SECRET_KEY"] = "test-key-not-a-real-secret-0123456789abcdef"
 # A local BASE_URL keeps SESSION_COOKIE_SECURE off, so the test client (which
 # speaks plain http) actually keeps its cookies.
 os.environ["BASE_URL"] = "http://127.0.0.1:8080"
-os.environ["DATABASE_URL"] = "sqlite:///" + str(Path(tempfile.mkdtemp()) / "test.db")
+# SQLite by default: no service to start, and `pytest` works on a laptop with
+# nothing installed. But SQLite is not what production runs, and the two
+# disagree in ways that only bite in deployment -- a NOT NULL column that
+# Postgres enforces and SQLite's type affinity lets through, for one. So an
+# externally supplied DATABASE_URL wins, and CI points this at a real
+# Postgres. Set it to run the same suite against the real engine:
+#     DATABASE_URL=postgresql+psycopg://lovify:lovify@localhost:5433/lovify pytest
+os.environ.setdefault(
+    "DATABASE_URL", "sqlite:///" + str(Path(tempfile.mkdtemp()) / "test.db"))
 os.environ.setdefault("SPOTIFY_CLIENT_ID", "test-client")
 os.environ.setdefault("SPOTIFY_CLIENT_SECRET", "test-client-secret")
 
 import pytest  # noqa: E402
+from sqlalchemy import inspect as sa_inspect  # noqa: E402
 
 import lovify  # noqa: E402
 import models  # noqa: E402
@@ -96,9 +105,33 @@ def spotify():
     return FakeSpotifyClient()
 
 
+# Every test starts by dropping all tables, which is fine against a throwaway
+# SQLite file and catastrophic against the development Postgres: track_features
+# there holds the seeded feature store, 1.4 million rows that take half a minute
+# to rebuild. Nothing stops someone exporting DATABASE_URL at a shell and
+# running pytest, so refuse rather than discover it afterwards. `make test-app`
+# points at a separate lovify_test database for this reason.
+SEED_LOOKS_REAL = 10_000
+
+
+def _refuse_to_wipe_real_data(engine):
+    from sqlalchemy import func, select
+    if not sa_inspect(engine).has_table("track_features"):
+        return
+    with engine.connect() as conn:
+        n = conn.execute(select(func.count()).select_from(TrackFeature.__table__)).scalar_one()
+    if n > SEED_LOOKS_REAL:
+        pytest.exit(
+            f"Refusing to run: {os.environ['DATABASE_URL'].rsplit('/', 1)[-1]} holds "
+            f"{n:,} track_features rows, which looks like the seeded store. The "
+            "suite drops every table before each test. Point DATABASE_URL at a "
+            "scratch database (`make test-app` does).", returncode=2)
+
+
 @pytest.fixture
 def app(spotify, scorer):
     """A clean database and an injected Spotify for every test."""
+    _refuse_to_wipe_real_data(lovify.engine)
     Base.metadata.drop_all(lovify.engine)
     models.init_db(lovify.engine)
     lovify.app.config.update(TESTING=True)
@@ -165,3 +198,37 @@ def match_id_from(response) -> str:
     """Pull the match id out of the redirect to /m/<id>."""
     assert response.status_code == 302, response.data[:400]
     return urlparse(response.headers["Location"]).path.rsplit("/", 1)[-1]
+
+
+@pytest.fixture
+def finished_token(app, db, spotify):
+    """A live public share link, for tests that only need one to exist."""
+    import secrets as _secrets
+
+    import security
+
+    ids = track_ids("f", 140)
+    seed_features(db, ids)
+    give_library(spotify, "f-one", "Fin", top=ids)
+    give_library(spotify, "f-two", "Rae", top=ids[:100] + track_ids("g", 40))
+    seed_features(db, track_ids("g", 40))
+
+    one, two = app.test_client(), app.test_client()
+    started = one.get("/login")
+    match_id = None
+    from urllib.parse import parse_qs, urlparse
+    state = parse_qs(urlparse(started.headers["Location"]).query)["state"][0]
+    landed = one.get(f"/callback?code=f-one&state={state}")
+    match_id = urlparse(landed.headers["Location"]).path.rsplit("/", 1)[-1]
+
+    started2 = two.get(f"/m/{match_id}/join")
+    state2 = parse_qs(urlparse(started2.headers["Location"]).query)["state"][0]
+    two.get(f"/callback?code=f-two&state={state2}")
+
+    with one.session_transaction() as sess:
+        token = _secrets.token_urlsafe(24)
+        sess[security.CSRF_SESSION_KEY] = token
+    one.post(f"/m/{match_id}/share", data={"csrf_token": token})
+
+    body = one.get(f"/m/{match_id}").get_data(as_text=True)
+    return body.split("/s/")[1].split('"')[0].split("<")[0].strip()

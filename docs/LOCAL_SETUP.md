@@ -7,7 +7,59 @@ new person reads.
 
 ---
 
-## What you need
+## Just want to look at it? Start here.
+
+The fastest path to a working app, with **no Docker, no Spotify account, and
+no credentials**:
+
+```bash
+make demo
+```
+
+Then open **http://127.0.0.1:8080/demo**.
+
+That page gives you four fake people with synthetic libraries. The score you
+get is computed by the real code — only the Spotify login and the trained
+model are stubbed. Walk the whole product in about two minutes:
+
+1. **Sign in as Ada.** You land on a waiting page with an invite link.
+2. **Copy that link, open it in a private window.** That is a second device.
+   Sign in as **Bo**. Both windows now show a score.
+3. **Press "Create a public link".** Open the `/s/…` link it gives you in a
+   third window — a stranger's view.
+4. **In that third window, paste the original invite link.** You should get
+   **403**. Results are for the two participants; the public link is a
+   separate thing you chose to create.
+5. **Press "Replace with a new link".** The first `/s/…` link now 404s.
+6. **Try Dot** (20 tracks) against Ada. You get "not enough listening
+   history" — a deliberate refusal, not an error.
+7. **`/me/matches`** — your history, and the share controls for each one.
+
+If `make demo` cannot find Python, it wants `ml/.venv`:
+
+```bash
+python3 -m venv ml/.venv && ml/.venv/bin/pip install -r requirements-app.txt
+```
+
+The demo refuses to start against a non-local `BASE_URL`, because it
+replaces authentication with a stub. There is no `DEMO_MODE` flag on the
+real app for the same reason.
+
+### Running the tests
+
+```bash
+make test-local     # both suites on your machine, no Docker
+```
+
+Expect **125 app tests** and **237 ML tests**, all passing.
+
+---
+
+## The full stack (Docker, real Spotify)
+
+Needed for real Spotify logins, Postgres, and the 1.4M-row feature store.
+
+### What you need
 
 - **Docker Desktop** — [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/).
   Everything runs inside it, so you do not need Python, Postgres, or anything
