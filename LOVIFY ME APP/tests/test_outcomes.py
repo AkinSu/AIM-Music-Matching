@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from conftest import (
     StubScorer, give_library, match_id_from, oauth_roundtrip, seed_features,
     track_ids,
@@ -140,3 +142,94 @@ def test_the_counts_nobody_has_measured_are_recorded(app, spotify, db):
     assert ada.coverage == 0.6
     assert json.loads(ada.sources_json) == {
         "top_short_term": 50, "saved": 80, "recently_played": 20}
+
+
+# ── telling three different 403s apart ───────────────────────────────────────
+
+class TestWhatA403Means:
+    """Akin was correctly on the allowlist and was told to fix the allowlist.
+
+    The app requested `user-top-read` alone while also calling /v1/me/tracks
+    for saved songs. Spotify answered that call with 403 "Insufficient client
+    scope", and both 403 handlers assumed every 403 was the development-mode
+    refusal. The consent screen he approved proves it: it offered recently
+    played and top artists, and never mentioned saved songs.
+
+    A 403 here means at least three different things and they have three
+    different fixes, exactly one of which is the user's to make.
+    """
+
+    def _response(self, message):
+        class R:
+            status_code = 403
+            text = f'{{"error":{{"status":403,"message":"{message}"}}}}'
+
+            def json(self):
+                import json
+                return json.loads(self.text)
+        return R()
+
+    def test_a_scope_error_is_not_blamed_on_the_allowlist(self):
+        from spotify_client import SpotifyClient, SpotifyError
+
+        with pytest.raises(SpotifyError) as exc:
+            SpotifyClient._raise_for_403(
+                self._response("Insufficient client scope"), "saved songs")
+
+        assert exc.value.allowlist is False, "this sends people to the wrong fix"
+        assert "configuration problem on our side" in str(exc.value)
+
+    def test_a_real_allowlist_refusal_is_still_recognised(self):
+        from spotify_client import SpotifyClient, SpotifyError
+
+        with pytest.raises(SpotifyError) as exc:
+            SpotifyClient._raise_for_403(
+                self._response("User not registered in the Developer Dashboard"),
+                "profile")
+
+        assert exc.value.allowlist is True
+        assert "allowlist" in str(exc.value)
+
+    def test_an_unrecognised_403_quotes_spotify_rather_than_guessing(self):
+        from spotify_client import SpotifyClient, SpotifyError
+
+        with pytest.raises(SpotifyError) as exc:
+            SpotifyClient._raise_for_403(
+                self._response("Some new thing we have never seen"), "top tracks")
+
+        assert exc.value.allowlist is False
+        assert "Some new thing we have never seen" in str(exc.value)
+        assert "top tracks" in str(exc.value)
+
+
+class TestScopesCoverTheEndpointsWeCall:
+    """The three-way disagreement that caused it.
+
+    spotify_client's own docstring said all three scopes were required and its
+    default had all three -- but lovify.py overrode that default with
+    `os.getenv("SCOPE", "user-top-read")`, and .env supplied two of the three.
+    """
+
+    def test_the_app_requests_every_scope_its_endpoints_need(self):
+        import lovify
+
+        assert set(lovify.REQUIRED_SCOPES.split()) == {
+            "user-top-read", "user-library-read", "user-read-recently-played"}
+
+    def test_the_default_is_the_full_set_not_a_subset(self):
+        """The fallback must be safe, because it is what runs when SCOPE is
+        unset -- which is the situation nobody tests."""
+        import inspect
+
+        from spotify_client import SpotifyClient
+
+        default = inspect.signature(SpotifyClient.__init__).parameters["scope"].default
+        assert "user-library-read" in default
+
+    def test_saved_songs_are_actually_read(self):
+        """If this stops being true, user-library-read can be dropped."""
+        import inspect
+
+        from spotify_client import SpotifyClient
+
+        assert "/me/tracks" in inspect.getsource(SpotifyClient.saved_track_ids)

@@ -92,12 +92,28 @@ if not app.scorer.ready:
     app.logger.warning("Compatibility scoring disabled: %s",
                        app.scorer.unavailable.reason)
 
+# Keep in step with the endpoints collect_library() actually calls.
+REQUIRED_SCOPES = "user-top-read user-library-read user-read-recently-played"
+
 app.spotify = SpotifyClient(
     client_id=os.getenv("SPOTIFY_CLIENT_ID", ""),
     client_secret=os.getenv("SPOTIFY_CLIENT_SECRET", ""),
     redirect_uri=REDIRECT_URI,
-    scope=os.getenv("SCOPE", "user-top-read"),
+    # All three, not one. collect_library() reads top tracks, saved songs and
+    # recently played; asking for only user-top-read means Spotify answers
+    # /v1/me/tracks with 403 "insufficient client scope", which this app used
+    # to report as "you are not on the allowlist" -- sending people to fix a
+    # dashboard setting that was already correct.
+    scope=os.getenv("SCOPE", REQUIRED_SCOPES),
 )
+
+_missing_scopes = set(REQUIRED_SCOPES.split()) - set(app.spotify.scope.split())
+if _missing_scopes:
+    # Loud, because the symptom is a 403 that reads like an allowlist problem.
+    app.logger.warning(
+        "SCOPE is missing %s. Saved songs cannot be read without "
+        "user-library-read, and Spotify's 403 for it is easily mistaken for "
+        "the development-mode allowlist refusal.", ", ".join(sorted(_missing_scopes)))
 
 if not app.spotify.configured:
     # Loud, because the symptom is otherwise a blank Spotify page saying

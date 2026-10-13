@@ -78,13 +78,19 @@ def main() -> int:
         say(BAD, f"{missing} empty in .env",
             "https://developer.spotify.com/dashboard → your app → Settings")
 
+    # All three, because collect_library() calls an endpoint for each. A
+    # missing user-library-read gives a 403 on /v1/me/tracks that reads
+    # exactly like the allowlist refusal, which cost an afternoon.
     scope = e.get("SCOPE", "")
-    needed = {"user-top-read"}
-    if needed <= set(scope.split()):
+    needed = {"user-top-read", "user-library-read", "user-read-recently-played"}
+    missing = needed - set(scope.split())
+    if not missing:
         say(OK, f"SCOPE = {scope}")
     else:
-        say(BAD, f"SCOPE is missing user-top-read (got: {scope or 'nothing'})",
-            "SCOPE=user-top-read user-read-recently-played")
+        say(BAD, f"SCOPE is missing {', '.join(sorted(missing))}",
+            "SCOPE=user-top-read user-library-read user-read-recently-played\n       "
+            "Then restart, and approve the Spotify consent screen again -- it\n       "
+            "will now ask for your saved songs, which it did not before.")
 
     # ── the one that bites everyone ─────────────────────────────────────────
     print()

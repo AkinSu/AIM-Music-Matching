@@ -34,6 +34,13 @@ NOT_ALLOWLISTED = (
 )
 
 
+INSUFFICIENT_SCOPE = (
+    "Spotify would not give this app permission to read part of your library. "
+    "That is a configuration problem on our side, not anything you did. The "
+    "server is asking for fewer permissions than it needs."
+)
+
+
 class SpotifyNotConfigured(Exception):
     """No client id/secret. A deployment problem, not a user problem."""
 
@@ -119,12 +126,38 @@ class SpotifyClient:
             raise SpotifyError("Spotify did not return an access token.")
         return token
 
+    @staticmethod
+    def _raise_for_403(r, where: str) -> None:
+        """Work out what Spotify actually objected to.
+
+        Both call sites used to treat every 403 as the development-mode
+        allowlist refusal. That is one of at least three things a 403 means
+        here, and guessing cost real debugging time: a correctly allowlisted
+        user was told to go and fix the allowlist, because the app was
+        requesting `user-top-read` alone while also calling /v1/me/tracks.
+
+        Spotify names the reason in the body. Read it.
+        """
+        body = (getattr(r, "text", "") or "")
+        try:
+            reason = (r.json().get("error") or {}).get("message", "")
+        except Exception:
+            reason = body[:200]
+
+        low = reason.lower()
+        if "scope" in low:
+            raise SpotifyError(f"{INSUFFICIENT_SCOPE} ({where}: {reason})")
+        if "registered" in low or "developer dashboard" in low or not reason:
+            raise SpotifyError(NOT_ALLOWLISTED, allowlist=True)
+        raise SpotifyError(
+            f"Spotify refused access to your {where}. It said: {reason}")
+
     # ── step 3: the only data we actually want ───────────────────────────────
     def profile(self, token: str) -> SpotifyProfile:
         r = self.session.get(f"{API}/me", headers=self._auth(token),
                              timeout=self.timeout)
         if getattr(r, "status_code", 0) == 403:
-            raise SpotifyError(NOT_ALLOWLISTED, allowlist=True)
+            self._raise_for_403(r, "profile")
         if not getattr(r, "ok", False):
             raise SpotifyError("Could not read your Spotify profile.")
         me = r.json()
@@ -221,7 +254,7 @@ class SpotifyClient:
             r = self.session.get(url, headers=self._auth(token), params=params,
                                  timeout=self.timeout)
             if getattr(r, "status_code", 0) == 403:
-                raise SpotifyError(NOT_ALLOWLISTED, allowlist=True)
+                self._raise_for_403(r, what)
             if not getattr(r, "ok", False):
                 raise SpotifyError(f"Could not read your {what} from Spotify.")
             items = r.json().get("items") or []

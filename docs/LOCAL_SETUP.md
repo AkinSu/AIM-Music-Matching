@@ -183,6 +183,8 @@ make check-db    # is the feature store loaded
 |---|---|
 | `INVALID_CLIENT: Invalid redirect URI` | step 3. Compare character by character |
 | 403 at the Spotify login screen | step 4. That account is not on the allowlist |
+| "allowlist" error when you ARE on the allowlist | almost certainly a **scope** problem, not an allowlist one. `make check` lists the three required scopes. Changing `SCOPE` needs `make down && make up` — `docker compose restart` does **not** re-read `.env` |
+| Consent screen does not mention your saved songs | `user-library-read` is missing from `SCOPE`. The app reads `/v1/me/tracks`, and without it Spotify answers 403 |
 | "Compatibility scoring is not available" | no model artifact — `ml/artifacts/lovify_models.joblib` |
 | "not enough listening history" | real, and not an error. Under 100 resolvable tracks the score is biased by tens of points, so the app refuses rather than guessing |
 | "we could not read that music" | that account's music is too new or too obscure for the pre-2021 audio database |
