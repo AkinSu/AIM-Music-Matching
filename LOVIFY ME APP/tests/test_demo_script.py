@@ -104,3 +104,28 @@ def test_it_refuses_to_run_against_a_public_base_url():
     source = (ROOT / "scripts" / "demo.py").read_text()
     assert "BASE_URL_IS_LOCAL" in source
     assert "sys.exit" in source
+
+
+def test_the_landing_page_login_button_does_not_dead_end(demo):
+    """The route a real person actually takes.
+
+    Akin opened the demo, pressed "Log in with Spotify" on the front page,
+    and got "Safari can't find the server spotify.test" -- because /login
+    with no demo code fell through to the real OAuth redirect, and the fake
+    client's authorize URL is a hostname that does not resolve. Every way
+    into the app has to reach the chooser.
+    """
+    page = demo.get("/login")
+    assert page.status_code == 200, "a redirect here goes somewhere that does not exist"
+    body = page.get_data(as_text=True)
+    assert "spotify.test" not in body
+    for name in ("Ada", "Bo", "Cy", "Dot"):
+        assert name in body
+
+
+def test_no_route_in_the_demo_redirects_to_a_fake_spotify(demo):
+    """The general form of the bug above."""
+    for path in ("/", "/login", "/dashboard", "/find-compatibility"):
+        page = demo.get(path, follow_redirects=True)
+        assert "spotify.test" not in page.get_data(as_text=True), path
+        assert page.status_code == 200, f"{path} -> {page.status_code}"

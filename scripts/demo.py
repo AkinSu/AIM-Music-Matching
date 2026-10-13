@@ -102,6 +102,25 @@ DEMO_PAGE = """
 """
 
 
+START_PAGE = """
+<!doctype html><meta charset=utf-8><title>Sign in — Lovify demo</title>
+<style>
+ body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.6}
+ a.btn{display:inline-block;padding:.5rem .9rem;margin:.2rem .3rem .2rem 0;
+       border:1px solid #888;border-radius:8px;text-decoration:none;color:inherit}
+ p.note{color:#666;font-size:.95rem}
+</style>
+<h1>Sign in as…</h1>
+<p class=note>This is the demo. There is no real Spotify behind it, so pick
+   one of these four instead. Start with <b>Ada</b>.</p>
+{% for code, (name, tracks) in people.items() %}
+  <a class=btn href="/login?demo={{ code }}">{{ name }}
+     <small>({{ tracks|length }} tracks)</small></a>
+{% endfor %}
+<p class=note><a href="/demo">← what to try</a></p>
+"""
+
+
 JOIN_PAGE = """
 <!doctype html><meta charset=utf-8><title>Join this match</title>
 <style>
@@ -160,12 +179,21 @@ def build() -> None:
         return                      # build() already ran in this process
 
     def login(*a, **kw):
+        """Every route into the app lands here, not just the /demo page.
+
+        The landing page's own "Log in with Spotify" button goes to /login
+        with no demo code, and the first version of this file passed that
+        straight through to the real OAuth redirect -- which, with the fake
+        client installed, is a hostname that does not resolve. Anyone who
+        started from the front page instead of /demo got "Safari can't find
+        the server spotify.test". Show the chooser instead.
+        """
         from urllib.parse import parse_qs, urlparse
 
         from flask import redirect, request
         code = request.args.get("demo")
         if not code:
-            return real_login(*a, **kw)
+            return render_template_string(START_PAGE, people=PEOPLE)
         started = real_login()
         state = parse_qs(urlparse(started.headers["Location"]).query)["state"][0]
         return redirect(f"/callback?code={code}&state={state}")
