@@ -34,6 +34,10 @@ NOT_ALLOWLISTED = (
 )
 
 
+class SpotifyNotConfigured(Exception):
+    """No client id/secret. A deployment problem, not a user problem."""
+
+
 class SpotifyError(Exception):
     """A Spotify call failed in a way the user should hear about."""
 
@@ -66,7 +70,24 @@ class SpotifyClient:
         self.session = session
 
     # ── step 1: send the user to Spotify ─────────────────────────────────────
+    @property
+    def configured(self) -> bool:
+        return bool(self.client_id and self.client_secret)
+
     def authorize_url(self, state: str) -> str:
+        if not self.configured:
+            # Without this the app happily builds `…/authorize?client_id=&…`
+            # and sends the user to Spotify, who answer with a bare white
+            # page reading "client_id: Not present". Nothing in that page
+            # mentions this app, this machine, or .env, so the obvious
+            # conclusion is that the app is broken.
+            #
+            # The usual cause is not a missing value in .env at all -- it is
+            # a container started BEFORE .env was filled in, because compose
+            # reads the file once at startup and never again.
+            raise SpotifyNotConfigured(
+                "This server has no Spotify credentials, so there is nothing "
+                "to log in to yet.")
         return f"{AUTH_URL}?" + urlencode({
             "client_id": self.client_id,
             "response_type": "code",
@@ -229,7 +250,14 @@ class FakeSpotifyClient:
     redirect_uri: str = "http://localhost/callback"
     calls: list = field(default_factory=list)
 
+    # The real client exposes this so the app can refuse to send anyone to
+    # Spotify with an empty client id. A double that does not carry the same
+    # property is a double that lets that bug through the tests.
+    configured: bool = True
+
     def authorize_url(self, state: str) -> str:
+        if not self.configured:
+            raise SpotifyNotConfigured("Fake client marked unconfigured.")
         return f"https://spotify.test/authorize?state={state}"
 
     def exchange_code(self, code: str) -> str:

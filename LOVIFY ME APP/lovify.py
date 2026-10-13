@@ -34,7 +34,7 @@ import security
 import sharing
 from models import MatchStatus, Role, init_db, make_engine, make_session_factory
 from scoring import Scorer
-from spotify_client import SpotifyClient, SpotifyError
+from spotify_client import SpotifyClient, SpotifyError, SpotifyNotConfigured
 
 load_dotenv()
 
@@ -99,6 +99,15 @@ app.spotify = SpotifyClient(
     scope=os.getenv("SCOPE", "user-top-read"),
 )
 
+if not app.spotify.configured:
+    # Loud, because the symptom is otherwise a blank Spotify page saying
+    # "client_id: Not present" that mentions neither this app nor .env.
+    app.logger.warning(
+        "NO SPOTIFY CREDENTIALS. Login will not work. If .env has them, this "
+        "container was started before they were added -- compose reads .env "
+        "once, at startup. Restart the stack. Check with: make check")
+
+
 # How many track ids to gather per person before we stop asking Spotify.
 # 400 is chosen against measured coverage: resolution against the feature
 # store runs 41% overall and ~60% for the popular tracks that dominate a
@@ -120,7 +129,21 @@ def _start_oauth(match_id: str, role: str):
     nonce = oauth_state.new_nonce()
     session[oauth_state.SESSION_NONCE_KEY] = nonce
     state = oauth_state.build(app.secret_key, nonce, match_id, role)
-    return redirect(app.spotify.authorize_url(state))
+    try:
+        return redirect(app.spotify.authorize_url(state))
+    except SpotifyNotConfigured:
+        # Say it here rather than letting Spotify say it. Their version is a
+        # blank page reading "client_id: Not present", which names neither
+        # this app nor the file that is actually wrong.
+        app.logger.error("Login attempted with no Spotify credentials.")
+        return render_template(
+            "match_error.html",
+            message=("This server has not been given its Spotify credentials, "
+                     "so logging in cannot work yet. If you are running this "
+                     "yourself: put SPOTIFY_CLIENT_ID and "
+                     "SPOTIFY_CLIENT_SECRET in .env, then restart "
+                     "(`make down && make up`) — the app reads that file only "
+                     "at startup. `make check` verifies both.")), 503
 
 
 def _remember_participation(match_id: str, role: str) -> None:

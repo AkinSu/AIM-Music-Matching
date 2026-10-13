@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 APP_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -54,3 +56,67 @@ def test_with_a_secret_key_the_app_imports_cleanly(tmp_path):
     })
 
     assert done.returncode == 0, done.stderr
+
+
+# ── missing credentials ──────────────────────────────────────────────────────
+
+class TestNoSpotifyCredentials:
+    """Akin filled in .env, pressed log in, and got a blank Spotify page
+    reading "client_id: Not present".
+
+    The app had built `…/authorize?client_id=&…` and sent him there. Spotify's
+    error names neither this app nor .env, so the only available conclusion
+    was that the app was broken. It was not: the container had been started
+    before .env was filled in, and compose reads that file once, at startup.
+
+    The app must say so itself rather than delegating the explanation to
+    Spotify.
+    """
+
+    @pytest.fixture
+    def unconfigured(self, app):
+        from spotify_client import SpotifyClient
+
+        original = app.spotify
+        app.spotify = SpotifyClient(client_id="", client_secret="",
+                                    redirect_uri="http://127.0.0.1:8080/callback",
+                                    scope="user-top-read")
+        yield app.test_client()
+        app.spotify = original
+
+    def test_the_client_knows_it_is_not_configured(self, unconfigured, app):
+        assert app.spotify.configured is False
+
+    def test_it_refuses_to_build_a_url_with_an_empty_client_id(self, app, unconfigured):
+        from spotify_client import SpotifyNotConfigured
+
+        with pytest.raises(SpotifyNotConfigured):
+            app.spotify.authorize_url("some-state")
+
+    def test_login_explains_itself_instead_of_redirecting(self, unconfigured):
+        page = unconfigured.get("/login")
+        assert page.status_code == 503, "a redirect here goes to a blank Spotify error"
+        body = page.get_data(as_text=True)
+        assert "SPOTIFY_CLIENT_ID" in body
+        assert "restart" in body.lower(), "the actual fix is usually a restart"
+
+    def test_a_configured_client_still_redirects(self, app):
+        """The suite runs against the fake, so assert the property that
+        matters rather than the hostname: a redirect happens, and it does
+        not carry an empty client id."""
+        started = app.test_client().get("/login")
+        assert started.status_code == 302
+        assert "client_id=&" not in started.headers["Location"]
+
+    def test_the_fake_client_honours_the_same_contract(self, app):
+        """A double that cannot be unconfigured cannot catch this bug."""
+        from spotify_client import SpotifyNotConfigured
+
+        assert app.spotify.configured is True
+        app.spotify.configured = False
+        try:
+            with pytest.raises(SpotifyNotConfigured):
+                app.spotify.authorize_url("s")
+            assert app.test_client().get("/login").status_code == 503
+        finally:
+            app.spotify.configured = True
