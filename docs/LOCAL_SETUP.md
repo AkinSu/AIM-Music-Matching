@@ -55,7 +55,112 @@ Expect **125 app tests** and **237 ML tests**, all passing.
 
 ---
 
-## The full stack (Docker, real Spotify)
+## Running the REAL thing, with real Spotify accounts
+
+The demo above proves the flow. This is the actual product: your Spotify
+account, your real listening history, the trained model, 1.4 million audio
+records.
+
+### 1. Check what is missing
+
+```bash
+make check
+```
+
+It tells you exactly what is not ready and how to fix each one. Run it again
+after every change until it says **Ready**.
+
+### 2. Put your Spotify credentials in `.env`
+
+[developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) →
+your app → **Settings**. Copy the Client ID, press "View client secret", copy
+that too.
+
+```
+SPOTIFY_CLIENT_ID=...
+SPOTIFY_CLIENT_SECRET=...
+```
+
+`make check` verifies them against Spotify directly, so you find out they are
+wrong now rather than halfway through a login.
+
+### 3. Register the redirect URI — this is the one that wastes an hour
+
+Same Settings page → **Redirect URIs** → Add:
+
+```
+http://127.0.0.1:8080/callback
+```
+
+Then press **Save**, which is easy to miss.
+
+Three ways this goes wrong, all giving the same unhelpful
+`INVALID_CLIENT: Invalid redirect URI`:
+
+- **`localhost` instead of `127.0.0.1`.** Spotify rejects `localhost`
+  outright. They are the same to your browser and not to Spotify.
+- **`https` instead of `http`.** Spotify requires https for every redirect
+  URI *except* a loopback IP, which `127.0.0.1` is. So http is correct here
+  and only here.
+- **A trailing slash, or the wrong port.** It is compared character for
+  character.
+
+Whatever you register must match `BASE_URL` in `.env` exactly, plus
+`/callback`. `make check` prints the exact string to paste.
+
+### 4. Add both testers to the allowlist
+
+Settings → **User Management** → add each person's **Spotify account email**.
+Max 25 while the app is in development mode.
+
+This matters more than it sounds: an account that is not on the list gets a
+**403 at login that looks exactly like a bug in the app**. If someone says
+"your site is broken", check this first.
+
+Your own account is *not* automatically on the list.
+
+### 5. Start it
+
+```bash
+make build && make up
+```
+
+The `build` is needed once because the stack was renamed. Then open
+**http://127.0.0.1:8080** — not `localhost:8080`, or the cookie and the
+redirect URI will not line up.
+
+### 6. Test it across two devices
+
+The whole point is two people on two devices, so testing it in one browser
+proves nothing:
+
+1. Sign in on your laptop. Copy the invite link.
+2. Open that link **on your phone**, or in a private window signed into the
+   second Spotify account.
+3. Sign in as the second person.
+4. Both of you see the result.
+
+Both accounts must be on the allowlist, and they must be genuinely different
+Spotify accounts — the app refuses to match an account with itself.
+
+### If something goes wrong
+
+```bash
+make logs        # what the app actually saw
+make check-db    # is the feature store loaded
+```
+
+| What you see | What it means |
+|---|---|
+| `INVALID_CLIENT: Invalid redirect URI` | step 3. Compare character by character |
+| 403 at the Spotify login screen | step 4. That account is not on the allowlist |
+| "Compatibility scoring is not available" | no model artifact — `ml/artifacts/lovify_models.joblib` |
+| "not enough listening history" | real, and not an error. Under 100 resolvable tracks the score is biased by tens of points, so the app refuses rather than guessing |
+| "we could not read that music" | that account's music is too new or too obscure for the pre-2021 audio database |
+
+---
+
+## Docker reference
 
 Needed for real Spotify logins, Postgres, and the 1.4M-row feature store.
 

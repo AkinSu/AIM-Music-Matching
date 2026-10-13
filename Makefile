@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs shell db test test-app test-all test-host test-local \
-        seed sweep demo fresh build ps
+        seed sweep demo check check-db fresh build ps
 
 COMPOSE := docker compose
 
@@ -78,6 +78,18 @@ test-app:  ## run the app test suite inside the container (real Postgres)
 test-all:  ## both suites, the way CI runs them
 	$(MAKE) test
 	$(MAKE) test-app
+
+# Pick an interpreter up front. A `cmd || fallback` here would re-run the
+# whole check whenever it reported a problem, because "problems found" and
+# "interpreter missing" both exit non-zero.
+PY := $(shell test -x ml/.venv/bin/python && echo ml/.venv/bin/python || echo python3)
+
+check:  ## is the REAL app ready to run? (credentials, model, data)
+	@$(PY) scripts/preflight.py
+
+check-db:  ## feature store row count, from inside the stack
+	@$(COMPOSE) exec -T db psql -U $(PG_USER) -d $(PG_DB) -tAc \
+	  "SELECT count(*) || ' tracks in the feature store' FROM track_features"
 
 demo:  ## click through the whole match flow, no Spotify account needed
 	@# Deliberately not a flag on the real app: a DEMO_MODE env var that
