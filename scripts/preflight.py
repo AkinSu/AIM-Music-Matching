@@ -88,11 +88,6 @@ def main() -> int:
 
     # ── the one that bites everyone ─────────────────────────────────────────
     print()
-    say(WARN, "Register this EXACT redirect URI in the Spotify dashboard:",
-        f"\033[1m{redirect}\033[0m\n       "
-        "Settings → Redirect URIs → Add. One differing character (http vs "
-        "https, localhost vs 127.0.0.1, a trailing slash, the port) gives\n       "
-        "'INVALID_CLIENT: Invalid redirect URI' and never says which part is wrong.")
     say(WARN, "Both testers must be on the development allowlist",
         "Dashboard → your app → Settings → User Management → add each person's\n       "
         "Spotify ACCOUNT EMAIL. 25 max. An account that is not on it gets a 403\n       "
@@ -122,6 +117,11 @@ def main() -> int:
                 "Copy both again from the dashboard.")
         except Exception as exc:                      # offline, DNS, proxy
             say(WARN, f"Could not reach Spotify to check the credentials ({exc})")
+
+    # ── the redirect URI, checked against Spotify rather than assumed ───────
+    if cid:
+        print()
+        check_redirect(cid, secret, redirect)
 
     # ── model and data ──────────────────────────────────────────────────────
     print()
@@ -158,6 +158,36 @@ def main() -> int:
         say(WARN, "No DATABASE_URL here; compose supplies it inside the container")
 
     return report()
+
+
+def check_redirect(client_id: str, secret: str, redirect: str) -> None:
+    """Print the redirect URI to verify by eye. It cannot be checked for you.
+
+    Two automated checks were tried here and both returned a confident
+    false pass, which is worse than no check at all:
+
+    1. GET /authorize and look for the error. When the caller is not logged
+       in, Spotify answers with its login page and validates the redirect
+       URI only afterwards. A logged-in browser got "redirect_uri: Not
+       matching configuration" from the very URL this had just called ok.
+
+    2. POST /api/token with a bogus code and read the error. Spotify checks
+       the code FIRST, so a registered URI, an unregistered one, and
+       http://totally-bogus.example/nope all return exactly
+       {"error":"invalid_grant","error_description":"Invalid authorization
+       code"}. Verified against all three.
+
+    So this prints the string and says to compare it. Do not replace it with
+    something that merely looks more thorough.
+    """
+    say(WARN, "Check this redirect URI is in the dashboard (cannot be verified "
+              "from here -- see the note in scripts/preflight.py):",
+        f"\033[1m{redirect}\033[0m\n       "
+        "Dashboard -> your app -> Settings -> Edit -> Redirect URIs.\n       "
+        "It must match character for character, then press \033[1mSave\033[0m.\n       "
+        "Old entries can stay; extras do no harm.\n       "
+        "Getting it wrong gives 'redirect_uri: Not matching configuration',\n       "
+        "which never says which part it disliked.")
 
 
 def report() -> int:
