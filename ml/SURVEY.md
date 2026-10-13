@@ -6,7 +6,7 @@ asks the question the product actually implies, and it is the only experiment he
 can answer it.
 
 It is also the only one that needs no Spotify API access at all, which matters: the app
-is capped at 25 allowlisted users in development mode, so libraries cannot be collected
+is capped at 5 allowlisted users in development mode, so libraries cannot be collected
 at survey scale. A Google Form has no such cap.
 
 ---
@@ -91,7 +91,7 @@ way studies this size go wrong.
 
 1. **Resolve the pasted artists** to Spotify artist IDs via `/v1/search`, then pull
    genres via `/v1/artists`. Both endpoints still work — no user auth required, so the
-   25-user cap never comes into play.
+   5-user cap never comes into play.
 2. **Build a taste vector per respondent**, the same genre histogram
    `features.genre_profile` already produces.
 3. **Primary test.** 12-class classification of sun sign from the taste vector, with

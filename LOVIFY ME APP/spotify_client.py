@@ -29,7 +29,7 @@ API = "https://api.spotify.com/v1"
 NOT_ALLOWLISTED = (
     "Spotify refused the login. While the app is in development mode, every "
     "person who signs in has to be added to the allowlist by email in the "
-    "Spotify developer dashboard, and it allows at most 25 people. Ask the "
+    "Spotify developer dashboard, and it allows at most 5 people. Ask the "
     "project owner to add your Spotify account email, then try again."
 )
 

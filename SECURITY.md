@@ -161,7 +161,7 @@ longer usable from one. A test asserts the raw id never appears.
 
 Named, so nobody assumes otherwise:
 
-- **No rate limiting.** The Spotify app is in development mode, capped at 25
+- **No rate limiting.** The Spotify app is in development mode, capped at 5
   allowlisted users. A blocklist we cannot test is worse than none.
 - **No account system.** There is no password to steal because there is no
   account. Identity is a cookie carrying a Spotify id, which is appropriate

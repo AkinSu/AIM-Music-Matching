@@ -259,21 +259,36 @@ steal.
 
 ---
 
-## 5. The 25-user cap
+## 5. The 5-user cap
 
-Spotify development mode allows **25 users total**, each added by hand in the developer
-dashboard by the exact email on their Spotify account. Anyone not on that list gets an
-authorisation error they cannot resolve and will read as "this app is broken".
+**Corrected 2026-10-13.** This section said 25 for the life of the project. The real
+figure is **5**, and the difference is not a detail — it changes what this product can
+be.
 
-**Both participants in a match must be allowlisted.** A demo where the audience scans a
-QR code and tries it does not work. Extended quota mode requires Spotify review, is not
-granted for student projects in practice, and would not restore the deprecated
-endpoints anyway.
+Spotify development mode allows **5 authenticated users total**, each added by hand in
+the developer dashboard by the exact email on their Spotify account. Anyone not on that
+list gets an authorisation error they cannot resolve and will read as "this app is
+broken". ([quota modes](https://developer.spotify.com/documentation/web-api/concepts/quota-modes))
 
-Plan for demo day accordingly: collect the Spotify account emails of everyone who might
-demo, in advance, and add them. Twelve allowlisted people is six simultaneous matches.
-Treat this as a hard constraint on the product, not an operational footnote — it shapes
-what a launch can even mean.
+**Both participants in a match must be allowlisted, so 5 users is two simultaneous
+pairs and one spare.** A demo where the audience scans a QR code and tries it cannot
+work. Neither can recruiting testers publicly.
+
+**And the cap is effectively permanent.** Since 15 May 2025 Spotify accepts extended
+quota requests only from organisations that are a legally registered business, operate
+a launched service, and have **at least 250,000 monthly active users**. Individual and
+student applications are not accepted at all. There is no path from 5 to 250,000 that
+runs through this API, and that is a widely reported complaint rather than something
+specific to us.
+
+So treat 5 as the permanent ceiling for anything that touches the Spotify API:
+
+- The **survey** (`ml/SURVEY.md`) is the only part of this project that can reach a
+  real sample, because it needs no Spotify login at all. That makes it the main
+  research instrument, not a side experiment.
+- A **public launch** of the matching app is not available. A demo for a room of five
+  pre-registered people is.
+- Anything we want many people to try has to be built without Spotify auth.
 
 ---
 

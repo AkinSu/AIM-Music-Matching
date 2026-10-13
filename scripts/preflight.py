@@ -90,8 +90,9 @@ def main() -> int:
     print()
     say(WARN, "Both testers must be on the development allowlist",
         "Dashboard → your app → Settings → User Management → add each person's\n       "
-        "Spotify ACCOUNT EMAIL. 25 max. An account that is not on it gets a 403\n       "
-        "at login that looks exactly like a bug in this app.")
+        "Spotify ACCOUNT EMAIL. \033[1mFIVE maximum\033[0m -- not 25; Spotify cut it, and\n       "
+        "both people in a match count. An account that is not on the list gets a\n       "
+        "403 at login that looks exactly like a bug in this app.")
 
     # ── does the credential actually work ───────────────────────────────────
     print()

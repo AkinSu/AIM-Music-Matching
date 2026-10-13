@@ -111,7 +111,14 @@ Whatever you register must match `BASE_URL` in `.env` exactly, plus
 ### 4. Add both testers to the allowlist
 
 Settings → **User Management** → add each person's **Spotify account email**.
-Max 25 while the app is in development mode.
+**Max FIVE** while the app is in development mode — not 25, which is what this
+project assumed until 2026-10-13. Both people in a match count against it, so
+five users is two simultaneous pairs and one spare.
+([quota modes](https://developer.spotify.com/documentation/web-api/concepts/quota-modes))
+
+The cap is effectively permanent: since May 2025 Spotify grants extended quota
+only to registered businesses with a launched service and **250,000 monthly
+active users**, and does not accept individual or student applications at all.
 
 This matters more than it sounds: an account that is not on the list gets a
 **403 at login that looks exactly like a bug in the app**. If someone says
@@ -142,6 +149,28 @@ proves nothing:
 
 Both accounts must be on the allowlist, and they must be genuinely different
 Spotify accounts — the app refuses to match an account with itself.
+
+### Your phone cannot be the second device (against a local server)
+
+Your phone cannot reach `127.0.0.1:8080` on your laptop — that address means
+"this machine" on whatever device asks. The obvious workaround, pointing it at
+the laptop's network address like `http://192.168.1.50:8080`, does not work
+either: Spotify permits plain `http` **only** for loopback literals (`127.0.0.1`
+and `[::1]`), and a LAN address is not one. `localhost` is rejected outright as
+well. ([redirect URI rules](https://developer.spotify.com/documentation/web-api/concepts/redirect_uri))
+
+So, in order of effort:
+
+1. **Two browser profiles on the laptop.** A normal window and a private one,
+   each signed into a different Spotify account. This genuinely tests the
+   cross-device path — the whole bug being fixed was shared cookie state, and
+   two profiles have separate cookie jars.
+2. **An https tunnel** if you want a real second device. `cloudflared tunnel
+   --url http://127.0.0.1:8080` or `ngrok http 8080` gives you an https URL;
+   register `https://<that-host>/callback` as a redirect URI and set `BASE_URL`
+   to it. The URL changes each run, so you re-register each time.
+3. **Deploy it.** Then the redirect URI is stable and anyone allowlisted can use
+   it from anywhere.
 
 ### If something goes wrong
 
@@ -269,7 +298,7 @@ from [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard).
 to your Spotify app's settings. Not `localhost`, not a different port — Spotify
 compares the string literally and rejects anything else.
 
-**Spotify allows only 25 users.** In development mode, every person who logs in
+**Spotify allows only 5 users.** In development mode, every person who logs in
 must be added by their Spotify account email in the dashboard first. Anyone not
 on that list gets a confusing authorisation failure. For a demo with two
 people, both have to be on the list.

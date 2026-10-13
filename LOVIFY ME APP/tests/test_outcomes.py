@@ -83,10 +83,16 @@ def test_a_missing_model_artifact_degrades_instead_of_crashing(app, spotify, db)
 
 
 def test_the_allowlist_refusal_tells_people_what_to_do(app, spotify, db):
-    """The likeliest failure on demo day: Spotify's 25-user dev-mode cap.
+    """The likeliest failure on demo day: Spotify's FIVE-user dev-mode cap.
 
     Spotify's own wording for it ("User not registered in the Developer
     Dashboard") tells the person nothing they can act on, so we replace it.
+
+    The number was 25 everywhere in this project until it was checked against
+    the documentation on 2026-10-13. It is five, both people in a match count
+    against it, and extended quota now needs 250k monthly active users, so
+    there is no version of this app that more than five people can log into.
+    https://developer.spotify.com/documentation/web-api/concepts/quota-modes
     """
     spotify.fail_with = SpotifyError(NOT_ALLOWLISTED, allowlist=True)
 
@@ -96,7 +102,8 @@ def test_the_allowlist_refusal_tells_people_what_to_do(app, spotify, db):
 
     assert refused.status_code == 403
     text = refused.get_data(as_text=True)
-    assert "allowlist" in text and "25 people" in text
+    assert "allowlist" in text and "5 people" in text
+    assert "25" not in text, "the cap is five; 25 was wrong for the life of the project"
 
 
 def test_a_spotify_outage_is_a_bad_gateway_not_a_crash(app, spotify, db):

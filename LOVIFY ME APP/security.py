@@ -19,7 +19,7 @@ Three groups:
    the browser getting that right.
 
 Deliberately NOT here: anything that rate-limits or blocks by IP. This is a
-25-user allowlisted Spotify app behind a dev-mode gate, and a blocklist we
+5-user allowlisted Spotify app behind a dev-mode gate, and a blocklist we
 cannot test is worse than none.
 """
 
