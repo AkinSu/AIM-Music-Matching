@@ -62,6 +62,52 @@ class LovifyModels:
     # population's listening is, which is the property the product wants.
     DISTINCTIVE_QUANTILE = 0.75
 
+    # How many shared artists the UI gets. Named once so the full-score path
+    # and the thin-library path cannot drift apart: a light listener used to
+    # be shown 5 while a heavy one was shown 5 from a far richer payload, and
+    # the asymmetry was accidental rather than meant.
+    SHARED_ARTISTS_SHOWN = 10
+
+    # ── How big a library has to be before the zodiac headline means anything ──
+    #
+    # Measured 2026-10-15 on the real scrape, not assumed. 98 real listeners
+    # (Spotify playlist owners from data/raw/zodiac.csv with >=200 tracks that
+    # resolve against the feature store), each split into two DISJOINT random
+    # subsamples of size n, scored with this artifact's own model, 60 splits
+    # each -- 5,880 independent comparisons per row. "stability" is how often
+    # the two halves of the same person produce the same headline sign.
+    #
+    #      n   stability   same, but tracks from DIFFERENT people   kappa
+    #     10      0.318                   0.223                     0.17
+    #     20      0.417                   0.265                     0.27
+    #     30      0.472                   0.321                     0.33
+    #     50      0.544                   0.360                     0.41
+    #     75      0.600                   0.407                     0.48
+    #    100      0.653                   0.441                     0.55
+    #    150      0.743                     --                        --
+    #
+    # Two readings, both of which this code acts on:
+    #
+    # 1. The headline sign is a coin flip below ~75 tracks. MIN_TRACKS_FOR_
+    #    HEADLINE is set there because that is where a second, independent
+    #    sample of the same person's library agrees 60% of the time. Below 30
+    #    tracks the top sign is right less than half the time and we show no
+    #    sign at all; between 30 and 75 we show the blend without crowning
+    #    one of them, because the blend's shape is steadier than its argmax.
+    #
+    # 2. The second column is the control that stops this being oversold.
+    #    Two subsamples drawn from DIFFERENT random listeners already agree
+    #    44% of the time at n=100, because the model has favourite signs
+    #    (Pisces and Gemini carry a third of all headlines). Only about 21
+    #    points of the 65% is anything to do with the person. That is
+    #    consistent with 0.1156 balanced accuracy and is exactly why this
+    #    ships as a taste summary with lift framing and never as a prediction.
+    HEADLINE_STABILITY = {10: 0.32, 20: 0.42, 30: 0.47, 40: 0.51, 50: 0.54,
+                          60: 0.58, 70: 0.60, 75: 0.60, 80: 0.61, 90: 0.64,
+                          100: 0.65, 150: 0.74}
+    MIN_TRACKS_FOR_HEADLINE = 75
+    MIN_TRACKS_FOR_MIX = 30
+
     def __init__(self, zodiac_model=None, blend_weights: dict | None = None,
                  n_modes: int = 3, mmr_lambda: float = 1.0,
                  min_library_tracks: int | None = None):
@@ -239,7 +285,19 @@ class LovifyModels:
 
     # ── inference ────────────────────────────────────────────────────────────
     def taste_profile(self, tracks: pd.DataFrame) -> dict:
-        """The zodiac feature, reported honestly."""
+        """The zodiac feature, reported honestly.
+
+        Unchanged, because notebooks and scripts read its keys. It assumes a
+        non-empty library and always names a headline sign, which is wrong for
+        a thin one -- `taste_summary()` is what the web app should call.
+        """
+        if not len(tracks):
+            # sklearn's own message here is "Found array with 0 sample(s)",
+            # which tells a caller nothing about what to do next.
+            raise ValueError(
+                "taste_profile() needs at least one track with audio features. "
+                "For a library that may be empty or thin, call taste_summary(), "
+                "which reports what it can and says how confident it is.")
         mix = Zm.taste_mix(self.zodiac_model, tracks)
         lift = Zm.lift(mix, self.zodiac_base_rate)
         top = lift.index[0]

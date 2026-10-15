@@ -332,3 +332,66 @@ footer p {
         justify-items: start;
     }
 }
+
+/* ── zodiac taste summary ────────────────────────────────────────────────── */
+
+/* Framing is the design problem here. The measured ability to predict a real
+   birth sign from audio is 1.39x chance, so this must read as a description
+   of music and never as a horoscope. Hence: no sign glyphs, no mystical
+   styling, numbers visible, and a visibly muted treatment when the signal is
+   too weak to mean anything. */
+
+.zodiac {
+    margin: 1.5rem 0;
+    padding: 1rem 1.1rem;
+    background: rgba(0, 0, 0, .03);
+    border-radius: 12px;
+}
+
+.zodiac h3 { margin: 0 0 .5rem; font-size: 1rem; }
+
+.zodiac__headline {
+    margin: .2rem 0 .6rem;
+    font-size: 1.25rem;
+}
+
+.zodiac__headline strong { font-size: 1.5rem; }
+
+/* Weak signal reads as weak at a glance, before anyone reads the caveat. */
+.zodiac__headline--weak { opacity: .75; font-size: 1.05rem; }
+.zodiac__headline--weak strong { font-size: 1.2rem; }
+
+.zodiac__lift {
+    display: inline-block;
+    margin-left: .4rem;
+    font-size: .85rem;
+    opacity: .75;
+}
+
+.zodiac__bars { list-style: none; padding: 0; margin: .6rem 0; }
+
+.zodiac__bars li {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr 3.2rem;
+    gap: .6rem;
+    align-items: center;
+    margin: .3rem 0;
+    font-size: .9rem;
+}
+
+.zodiac__sign { white-space: nowrap; }
+
+.bar__fill--weak { opacity: .45; }
+
+.notice {
+    margin: 0 0 1rem;
+    padding: .7rem .9rem;
+    background: rgba(0, 0, 0, .05);
+    border-left: 3px solid currentColor;
+    border-radius: 6px;
+    font-size: .95rem;
+}
+
+@media (max-width: 480px) {
+    .zodiac__bars li { grid-template-columns: 4.5rem 1fr 2.8rem; font-size: .82rem; }
+}

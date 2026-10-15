@@ -110,6 +110,31 @@ class Scorer:
             }
         return self.models.compatibility(tracks_a, tracks_b)
 
+    def taste_profile(self, tracks) -> dict | None:
+        """One person's zodiac taste summary, or None if unavailable.
+
+        The whole zodiac result of this project lives behind this call and
+        was never wired to a page. It is a *summary*, not a prediction: the
+        measured ability to predict a real birth sign from audio is 1.39x
+        chance, below the threshold this project pre-registered as dead.
+        What survives that is "your listening leans Scorpio-ish compared with
+        an average listener", with the lift stated, which is what the model
+        actually supports.
+
+        Returns None rather than raising, because a missing taste summary
+        must never take down a results page that has a real compatibility
+        score on it.
+        """
+        if not self.ready or tracks is None or not len(tracks):
+            return None
+        try:
+            return self.models.taste_profile(tracks)
+        except Exception:                       # pragma: no cover - defensive
+            import logging
+            logging.getLogger(__name__).warning(
+                "taste_profile failed; the page renders without it", exc_info=True)
+            return None
+
 
 def features_for(db_session, track_ids: list[str]):
     """Look up audio features for these track ids, as a DataFrame.

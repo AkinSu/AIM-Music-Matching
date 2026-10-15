@@ -4,7 +4,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help up down logs shell db test test-app test-all test-host test-local \
-        seed sweep demo check check-db fresh build ps
+        seed sweep check check-db fresh build ps
 
 COMPOSE := docker compose
 
@@ -90,13 +90,6 @@ check:  ## is the REAL app ready to run? (credentials, model, data)
 check-db:  ## feature store row count, from inside the stack
 	@$(COMPOSE) exec -T db psql -U $(PG_USER) -d $(PG_DB) -tAc \
 	  "SELECT count(*) || ' tracks in the feature store' FROM track_features"
-
-demo:  ## click through the whole match flow, no Spotify account needed
-	@# Deliberately not a flag on the real app: a DEMO_MODE env var that
-	@# stubs out authentication is one mistake away from being set in
-	@# production. This is a separate entry point that refuses to run
-	@# against a non-local BASE_URL.
-	ml/.venv/bin/python scripts/demo.py
 
 sweep:  ## delete expired matches and old track lists (run daily in deployment)
 	$(COMPOSE) exec -T -w /app/web web python retention.py

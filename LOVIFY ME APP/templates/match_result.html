@@ -1,5 +1,65 @@
 {% extends "_match_base.html" %}
 {% block title %}Your music compatibility{% endblock %}
+
+{#
+  The zodiac summary, for one person.
+
+  Framing matters more than layout here. This project MEASURED how well a
+  birth sign can be predicted from audio: 1.39x chance, below the threshold
+  it pre-registered as "dead". So this is never a guess at someone's real
+  sign. It is "your listening leans Scorpio-ish compared with an average
+  listener", with the lift printed, which is what the numbers support.
+
+  When the top lift is not meaningfully above the population baseline, the
+  model says so (is_distinctive=false) and this says so too, rather than
+  dressing noise up as a personality.
+#}
+{% macro zodiac(person) %}
+  {% set t = person.taste %}
+  {% if t %}
+    <div class="zodiac">
+      <h3>{{ person.user_name or "They" }}&rsquo;s listening leans</h3>
+
+      {% if t.is_distinctive %}
+        <p class="zodiac__headline">
+          <strong>{{ t.headline_sign }}</strong>
+          <span class="zodiac__lift">{{ t.headline_lift }}&times; an average listener</span>
+        </p>
+      {% else %}
+        <p class="zodiac__headline zodiac__headline--weak">
+          <strong>{{ t.headline_sign }}</strong>, but only just
+          <span class="zodiac__lift">{{ t.headline_lift }}&times; chance</span>
+        </p>
+        <p class="small">
+          That is not far enough above an average listener to mean much. We
+          would rather say so than invent a personality for you.
+        </p>
+      {% endif %}
+
+      <ul class="zodiac__bars">
+        {% for sign, value in t.lift.items() %}
+          {% if loop.index <= 5 %}
+            <li>
+              <span class="zodiac__sign">{{ sign }}</span>
+              <span class="bar"><span class="bar__fill{{ ' bar__fill--weak' if value < t.distinctive_threshold }}"
+                style="width: {{ ((value / 2.5) * 100)|round|int if value < 2.5 else 100 }}%"></span></span>
+              <span class="num">{{ "%.2f"|format(value) }}&times;</span>
+            </li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+
+      <p class="small">
+        These are <em>lifts</em>: how much more of this sign&rsquo;s playlist
+        sound is in this library than in an average one. 1.00&times; is
+        ordinary. It is a description of music, not a guess at a birthday —
+        we measured that, and audio predicts a real birth sign barely better
+        than chance.
+      </p>
+    </div>
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
 
 {#
@@ -12,13 +72,23 @@
   Only `failed` is an actual fault on our side.
 #}
 
+{% if self_match %}
+  <p class="notice">
+    <strong>This is you, compared with yourself.</strong> Useful as a check —
+    an identical library should land at the very top — but it is not a
+    comparison with another person.
+  </p>
+{% endif %}
+
 <div class="pair">
   {% for p in [you, them] if p %}
     <div class="person">
       {% if p.user_photo %}<img src="{{ p.user_photo }}" alt="">{% endif %}
       <div>
         <strong>{{ p.user_name or "Someone" }}</strong>
-        <span class="small">{{ p.n_tracks }} tracks read</span>
+        <span class="small">
+          {{ p.n_tracks }} tracks read{% if p.n_resolved %}, {{ p.n_resolved }} we could analyse{% endif %}
+        </span>
       </div>
     </div>
   {% endfor %}
@@ -69,24 +139,80 @@
     </table>
   {% endif %}
 
+  {{ zodiac(you) }}
+  {{ zodiac(them) }}
+
 {% elif status == "insufficient" %}
 
-  <h1>Not enough listening history yet</h1>
+  {#
+    Deliberately not a refusal screen any more.
+
+    Someone who has not used Spotify much still has a library, and almost
+    everything interesting about a comparison — who you both listen to, which
+    genres you share, what your music leans like — is an exact set operation
+    that does not care how big that library is.
+
+    The single thing that genuinely needs 100+ tracks is the PERCENTILE,
+    because that is the part calibrated against a null distribution of
+    similar-sized pairs. So withhold that, and show the rest.
+  #}
+  <h1>Here is what we can tell you</h1>
   <p class="lead">{{ result.interpretation if result else
-     "One of you does not have enough tracks we can read to score this fairly." }}</p>
-  <p class="small">
-    We will not guess. Below about {{ result.min_required if result else 100 }} tracks the
-    number is biased by tens of percentile points in a direction neither of
-    you could spot, so a wrong answer would look exactly like a right one.
-  </p>
+     "One of you has a small listening history, so we are leaving out the
+      headline number and showing the parts that are exact." }}</p>
 
   {% if result and result.shared_artists %}
     <h2>Artists you both listen to</h2>
-    <p class="small">These are exact — no estimate involved.</p>
+    <p class="small">
+      Exact — no estimate involved, and not affected by how much either of you
+      has listened.
+    </p>
     <ul class="chips">
       {% for artist in result.shared_artists %}<li>{{ artist }}</li>{% endfor %}
     </ul>
+    {% if result.n_shared_artists and result.n_shared_artists > result.shared_artists|length %}
+      <p class="small">and {{ result.n_shared_artists - result.shared_artists|length }} more.</p>
+    {% endif %}
   {% endif %}
+
+  {% if result and result.top_shared_genres %}
+    <h2>Where you overlap</h2>
+    <ul class="chips">
+      {% for genre in result.top_shared_genres %}<li>{{ genre }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if result and result.components %}
+    <h2>How close the music is</h2>
+    <p class="small">
+      Raw measures, not ranked against other pairs. Higher is more alike.
+    </p>
+    <table class="components">
+      {% for name, value in result.components.items() %}
+        <tr>
+          <th scope="row">{{ name.replace("_", " ") }}</th>
+          <td>
+            <span class="bar"><span class="bar__fill"
+              style="width: {{ (value * 100)|round|int if value <= 1 else 100 }}%"></span></span>
+          </td>
+          <td class="num">{{ "%.2f"|format(value) }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {{ zodiac(you) }}
+  {{ zodiac(them) }}
+
+  <h2>The one thing we are leaving out</h2>
+  <p class="small">
+    The percentile — &ldquo;more alike than 80% of pairs&rdquo;. That one is
+    ranked against pairs of a similar size, and below about
+    {{ result.min_required if result else 100 }} tracks it is biased by tens of
+    points in a direction neither of you could spot. A wrong answer there would
+    look exactly like a right one, so we would rather not print it.
+    Listen to a bit more and come back; everything above stays as it is.
+  </p>
 
 {% elif status == "unresolved" %}
 
@@ -99,6 +225,19 @@
     Newer and more obscure music is simply missing, and that is a limit of
     ours, not of your taste.
   </p>
+
+  {% if result and result.tracks_read %}
+    <p class="small">
+      We read {{ result.tracks_read.inviter }} and {{ result.tracks_read.invited }}
+      tracks, and recognised
+      {{ result.tracks_resolved.inviter }} and {{ result.tracks_resolved.invited }}
+      of them.
+    </p>
+  {% endif %}
+
+  {# Whichever side did resolve still gets their summary. #}
+  {{ zodiac(you) }}
+  {{ zodiac(them) }}
 
 {% else %}
 

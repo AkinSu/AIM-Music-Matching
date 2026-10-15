@@ -61,11 +61,21 @@ def join_match(db, match: Match, role: str, profile, track_ids: list[str],
     if role not in (Role.INVITER, Role.INVITED):
         raise MatchError("Unknown role for this invitation.")
 
+    # Matching yourself used to be refused. It is allowed now, deliberately.
+    #
+    # Spotify caps development mode at FIVE users, so for most of this
+    # project's life there will be more people who want to see it work than
+    # there are seats. Opening your own link in a second window is the only
+    # way one person can exercise the real two-device flow end to end.
+    #
+    # It is also a calibration check with a known answer: a library compared
+    # against itself must come out at the very top of the distribution. If a
+    # self-match ever scores middling, the scorer is broken, and that is worth
+    # being able to see in ten seconds.
+    #
+    # The result is labelled, so nobody mistakes it for a real comparison.
     other = match.participant(Role.INVITED if role == Role.INVITER else Role.INVITER)
-    if other is not None and other.spotify_id == profile.spotify_id:
-        raise MatchError(
-            "That is the same Spotify account as the other person in this match. "
-            "Open the link on a different account to compare two people.")
+    is_self_match = other is not None and other.spotify_id == profile.spotify_id
 
     participant = match.participant(role)
     if participant is None:
@@ -104,7 +114,7 @@ def join_match(db, match: Match, role: str, profile, track_ids: list[str],
 
     scored = False
     if match.inviter is not None and match.invited is not None:
-        score_match(db, match, scorer)
+        score_match(db, match, scorer, self_match=is_self_match)
         scored = True
 
     return JoinResult(match=match, participant=participant, scored=scored)
@@ -112,7 +122,7 @@ def join_match(db, match: Match, role: str, profile, track_ids: list[str],
 
 # ── score ────────────────────────────────────────────────────────────────────
 
-def score_match(db, match: Match, scorer=None) -> dict:
+def score_match(db, match: Match, scorer=None, self_match: bool = False) -> dict:
     """Compute and persist the result.
 
     Stored rather than recomputed on each view: the two people open the page
@@ -146,17 +156,49 @@ def score_match(db, match: Match, scorer=None) -> dict:
     # Nothing resolvable is its own outcome. It happens for real people whose
     # listening is too new or too obscure for a pre-2021 feature dump, and
     # telling them that is far better than a confident wrong number.
+    def _taste() -> dict:
+        """Zodiac summaries, or empty if this scorer does not do them.
+
+        getattr rather than a direct call: the taste summary is a bonus on
+        top of the score, and a scorer that cannot produce one must not be
+        able to take down a results page that has a real number on it.
+        """
+        f = getattr(scorer, "taste_profile", None)
+        if f is None:
+            return {}
+        return {"inviter": f(frame_a), "invited": f(frame_b)}
+
     empty = [p.display_name or "they" for p, f in ((a, frame_a), (b, frame_b)) if not len(f)]
     if empty:
         return _finish(db, match, MatchStatus.UNRESOLVED, {
             "status": "no_resolvable_tracks",
             "percentile": None,
+            "self_match": bool(self_match or a.spotify_id == b.spotify_id),
+            # Whichever side DID resolve still gets a taste summary. One
+            # person's music being unreadable is no reason to tell the other
+            # person nothing.
+            "taste": _taste(),
+            "tracks_read": {"inviter": a.n_tracks, "invited": b.n_tracks},
+            "tracks_resolved": {"inviter": len(frame_a), "invited": len(frame_b)},
             "interpretation": (
                 f"We could not find audio data for {' or '.join(empty)}'s music. "
                 "That usually means it is too new or too obscure for our database."),
         }, f"unresolved for: {', '.join(empty)}")
 
     result = scorer.compatibility(frame_a, frame_b)
+    # Recomputed rather than trusted from the caller: a match can be rescored
+    # later, and the two sides are right here.
+    result["self_match"] = bool(self_match or a.spotify_id == b.spotify_id)
+
+    # The zodiac summary, per person. Computed here and stored with the
+    # result, because the track frames are dropped by the retention sweep a
+    # day after scoring and this cannot be recomputed afterwards.
+    #
+    # Attached for BOTH people even when the pair could not be scored: a
+    # taste summary needs only one library, so someone whose listening is too
+    # thin for a compatibility percentile can still be told what their own
+    # music leans towards. That is the point of showing it.
+    result["taste"] = _taste()
     status = {
         "ok": MatchStatus.COMPLETE,
         "insufficient_library": MatchStatus.INSUFFICIENT,
@@ -192,18 +234,28 @@ def view_model(match: Match, viewer_role: str | None) -> dict:
     if viewer_role is None:
         me, them = inviter, invited
 
+    result = result_for(match) or {}
+    taste = result.get("taste") or {}
+
     def card(p: Participant | None) -> dict:
+        """One person, as the page needs them.
+
+        The zodiac summary is attached to the person rather than left in a
+        parallel dict, so the template never has to work out whose is whose.
+        """
         if p is None:
             return {}
         return {"user_name": p.display_name, "user_photo": p.photo_url,
-                "n_tracks": p.n_tracks}
+                "n_tracks": p.n_tracks, "n_resolved": p.n_resolved,
+                "taste": taste.get(p.role)}
 
     return {
         "match_id": match.id,
         "status": match.status,
         "you": card(me),
         "them": card(them),
-        "result": result_for(match),
+        "result": result or None,
+        "self_match": bool(result.get("self_match")),
         "is_participant": viewer_role is not None,
         "waiting_on_other": match.status == MatchStatus.WAITING,
     }

@@ -120,8 +120,14 @@ def test_a_third_person_with_the_link_gets_nothing(app, spotify, db):
         assert dict(s) == {}, "looking at a link must not enrol you in the match"
 
 
-def test_the_same_spotify_account_cannot_match_itself(app, spotify, db):
-    """A shared laptop, or someone testing their own link, is not a match."""
+def test_you_can_match_against_yourself(app, spotify, db):
+    """Asked for directly, and the opposite of what this test used to assert.
+
+    Spotify caps development mode at FIVE users, so for most of this
+    project's life there are more people who want to see it work than there
+    are seats. Opening your own link in a second window is the only way one
+    person can exercise the real two-device flow end to end.
+    """
     seed_features(db, track_ids("x", 120))
     give_library(spotify, "a-code", "Ada", saved=track_ids("x", 120))
     # A second login code belonging to the same Spotify account.
@@ -131,9 +137,33 @@ def test_the_same_spotify_account_cannot_match_itself(app, spotify, db):
     first, second = app.test_client(), app.test_client()
     match_id = match_id_from(oauth_roundtrip(first, "/login", "a-code")[0])
 
-    refused, _ = oauth_roundtrip(second, f"/m/{match_id}/join", "a-again")
-    assert refused.status_code == 409
-    assert "same Spotify account" in refused.get_data(as_text=True)
+    landed, _ = oauth_roundtrip(second, f"/m/{match_id}/join", "a-again")
+    assert landed.status_code == 302, landed.get_data(as_text=True)[:300]
+
+    page = first.get(f"/m/{match_id}")
+    assert page.status_code == 200
+    assert "82.4" in page.get_data(as_text=True)
+
+
+def test_a_self_match_is_labelled_as_one(app, spotify, db):
+    """It must never be mistaken for a real comparison with another person."""
+    seed_features(db, track_ids("x", 120))
+    give_library(spotify, "a-code", "Ada", saved=track_ids("x", 120))
+    give_library(spotify, "a-again", "Ada", saved=track_ids("x", 120))
+    spotify.profiles["a-again"].spotify_id = spotify.profiles["a-code"].spotify_id
+
+    first, second = app.test_client(), app.test_client()
+    match_id = match_id_from(oauth_roundtrip(first, "/login", "a-code")[0])
+    oauth_roundtrip(second, f"/m/{match_id}/join", "a-again")
+
+    body = first.get(f"/m/{match_id}").get_data(as_text=True)
+    assert "yourself" in body.lower()
+
+    import lovify
+    with lovify.Session() as s:
+        import matching
+        from models import Match
+        assert matching.result_for(s.get(Match, match_id))["self_match"] is True
 
 
 def test_rejoining_after_a_dropped_redirect_is_not_an_error(app, spotify, db):

@@ -192,8 +192,18 @@ class CompatibilityScorer:
             self.fit_null()
         return float(np.searchsorted(self._null, self.raw_score(u, v)) / len(self._null) * 100)
 
-    def explain(self, u: str, v: str, top_artists: int = 5) -> dict:
-        """Everything the UI needs: the score, why, and proof."""
+    def evidence(self, u: str, v: str, top_artists: int = 5) -> dict:
+        """Everything explain() returns EXCEPT the percentile.
+
+        Split out from explain() because the percentile is the only part that
+        needs a fitted null distribution, and therefore the only part that is
+        unreportable for a small library. Every field below is an exact count
+        or overlap computed from the two libraries as given: a shared artist
+        is a shared artist whether someone has 30 tracks or 300. Keeping them
+        behind the percentile's calibration gate meant a light listener was
+        shown almost nothing, which is a bigger lie than a missing number --
+        it implies we found no common ground when we never looked.
+        """
         c = self.components(u, v)
         shared = sorted(self.artist_sets[u] & self.artist_sets[v])
         gu, gv = self.genre_profiles.loc[u], self.genre_profiles.loc[v]
@@ -208,13 +218,17 @@ class CompatibilityScorer:
         shared_genres = (np.sqrt(gu * gv)).sort_values(ascending=False)
         shared_genres = shared_genres[shared_genres > 0]
         return {
-            "percentile": round(self.percentile(u, v), 1),
             "raw_score": round(self.raw_score(u, v), 4),
             "components": {k: round(v_, 4) for k, v_ in c.items()},
             "shared_artists": shared[:top_artists],
             "n_shared_artists": len(shared),
             "top_shared_genres": list(shared_genres.head(3).index),
         }
+
+    def explain(self, u: str, v: str, top_artists: int = 5) -> dict:
+        """Everything the UI needs: the score, why, and proof."""
+        return {"percentile": round(self.percentile(u, v), 1),
+                **self.evidence(u, v, top_artists=top_artists)}
 
 
 # ── Evaluating the metrics ────────────────────────────────────────────────────

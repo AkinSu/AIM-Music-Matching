@@ -68,6 +68,28 @@ class StubScorer:
         self.ready = ready
         self.calls = 0
 
+    def taste_profile(self, tracks) -> dict | None:
+        """Shaped exactly like LovifyModels.taste_profile().
+
+        Deliberately returns an is_distinctive=False profile for a thin
+        library, because the hedged wording is the half of this feature most
+        likely to be got wrong and least likely to be looked at.
+        """
+        n = len(tracks)
+        if not n:
+            return None
+        distinctive = n >= 100
+        return {
+            "mix": {"Scorpio": 0.141, "Pisces": 0.118, "Virgo": 0.097,
+                    "Leo": 0.081, "Aries": 0.072},
+            "lift": {"Scorpio": 1.69, "Pisces": 1.42, "Virgo": 1.16,
+                     "Leo": 0.97, "Aries": 0.86},
+            "headline_sign": "Scorpio",
+            "headline_lift": 1.69 if distinctive else 1.08,
+            "is_distinctive": distinctive,
+            "distinctive_threshold": 1.25,
+        }
+
     def compatibility(self, tracks_a, tracks_b) -> dict:
         self.calls += 1
         n_a, n_b = len(tracks_a), len(tracks_b)
