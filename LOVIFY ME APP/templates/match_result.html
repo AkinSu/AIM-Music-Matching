@@ -1,0 +1,328 @@
+{% extends "_match_base.html" %}
+{% block title %}Your music compatibility{% endblock %}
+
+{#
+  The zodiac summary, for one person.
+
+  Framing is the design problem here, not layout. This project MEASURED two
+  things and the block is built around both:
+
+  1. Predicting a real birth sign from audio runs at 1.39x chance, which the
+     project pre-registered as dead. So this is never a guess at someone's
+     sign. It is "your listening leans Scorpio-ish", with the lift printed.
+
+  2. The headline sign is UNSTABLE on small libraries. Splitting one real
+     person's library in half and scoring each half separately gives a
+     different top sign 40% of the time at 75 tracks, and 68% of the time at
+     10. Two samples from two DIFFERENT random listeners already agree 44%
+     of the time, because the model has favourite signs.
+
+  So the template never decides what is safe to show. taste_summary() sets
+  show_headline / show_mix from measured floors, and when show_headline is
+  false there is no sign in the payload to render even by accident.
+#}
+{% macro zodiac(person) %}
+  {% set t = person.taste %}
+  {% if t %}
+    <div class="zodiac zodiac--{{ t.confidence }}">
+      <h3>{{ person.user_name or "They" }}&rsquo;s listening leans</h3>
+
+      {% if t.show_headline %}
+        <p class="zodiac__headline">
+          <strong>{{ t.headline_sign }}</strong>
+          <span class="zodiac__lift">{{ t.headline_lift }}&times; an average listener</span>
+        </p>
+      {% elif t.show_mix %}
+        <p class="zodiac__headline zodiac__headline--weak">
+          A rough blend, with no clear leader
+        </p>
+      {% endif %}
+
+      {% if t.show_mix %}
+        <ul class="zodiac__bars">
+          {% for sign, value in t.lift.items() %}
+            {% if loop.index <= 5 %}
+              <li>
+                <span class="zodiac__sign">{{ sign }}</span>
+                <span class="bar"><span class="bar__fill{{ ' bar__fill--weak' if not t.show_headline }}"
+                  style="width: {{ ((value / 2.5) * 100)|round|int if value < 2.5 else 100 }}%"></span></span>
+                <span class="num">{{ "%.2f"|format(value) }}&times;</span>
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {# Written by the model, not by this page, so the wording cannot drift
+         away from the number it is describing. #}
+      <p class="small">{{ t.caveat }}</p>
+
+      {% if t.show_mix %}
+        <p class="small">
+          These are <em>lifts</em>: how much more of this sign&rsquo;s playlist
+          sound is in this library than in an average one. 1.00&times; is
+          ordinary.
+          {%- if t.stability %}
+          Two different halves of the same person&rsquo;s library agree on the
+          top sign about {{ (t.stability * 100)|round|int }}% of the time at
+          this size, so treat it loosely.
+          {%- endif %}
+        </p>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+
+{#
+  One template for every ending, because every ending is a real ending.
+
+  "Not enough listening history" and "we have no audio data for this music"
+  are not errors -- they are the scorer declining to invent a number, which
+  happens to ordinary people with ordinary Spotify accounts. Each gets a
+  screen that says what happened and what, if anything, would change it.
+  Only `failed` is an actual fault on our side.
+#}
+
+{% if self_match %}
+  <p class="notice">
+    <strong>This is you, compared with yourself.</strong> Useful as a check —
+    an identical library should land at the very top — but it is not a
+    comparison with another person.
+  </p>
+{% endif %}
+
+<div class="pair">
+  {% for p in [you, them] if p %}
+    <div class="person">
+      {% if p.user_photo %}<img src="{{ p.user_photo }}" alt="">{% endif %}
+      <div>
+        <strong>{{ p.user_name or "Someone" }}</strong>
+        <span class="small">
+          {{ p.n_tracks }} tracks read{% if p.n_resolved %}, {{ p.n_resolved }} we could analyse{% endif %}
+        </span>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% if status == "complete" and result and result.percentile is not none %}
+
+  <div class="score">
+    <span class="score__number">{{ result.percentile }}<sup>th</sup></span>
+    <span class="score__label">percentile</span>
+  </div>
+  <p class="lead">{{ result.interpretation }}</p>
+  <p class="small">
+    That is measured against randomly paired listeners, not against a score
+    out of 100 — half of all random pairs land below the 50th.
+  </p>
+
+  {% if result.shared_artists %}
+    <h2>Artists you both listen to</h2>
+    <ul class="chips">
+      {% for artist in result.shared_artists %}<li>{{ artist }}</li>{% endfor %}
+    </ul>
+    {% if result.n_shared_artists > result.shared_artists|length %}
+      <p class="small">and {{ result.n_shared_artists - result.shared_artists|length }} more.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if result.top_shared_genres %}
+    <h2>Where you overlap</h2>
+    <ul class="chips">
+      {% for genre in result.top_shared_genres %}<li>{{ genre }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if result.components %}
+    <h2>What went into it</h2>
+    <table class="components">
+      {% for name, value in result.components.items() %}
+        <tr>
+          <th scope="row">{{ name.replace("_", " ") }}</th>
+          <td>
+            <span class="bar"><span class="bar__fill"
+              style="width: {{ (value * 100)|round|int if value <= 1 else 100 }}%"></span></span>
+          </td>
+          <td class="num">{{ "%.2f"|format(value) }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {{ zodiac(you) }}
+  {{ zodiac(them) }}
+
+{% elif status == "insufficient" %}
+
+  {#
+    Deliberately not a refusal screen any more.
+
+    Someone who has not used Spotify much still has a library, and almost
+    everything interesting about a comparison — who you both listen to, which
+    genres you share, what your music leans like — is an exact set operation
+    that does not care how big that library is.
+
+    The single thing that genuinely needs 100+ tracks is the PERCENTILE,
+    because that is the part calibrated against a null distribution of
+    similar-sized pairs. So withhold that, and show the rest.
+  #}
+  <h1>Here is what we can tell you</h1>
+  <p class="lead">{{ result.interpretation if result else
+     "One of you has a small listening history, so we are leaving out the
+      headline number and showing the parts that are exact." }}</p>
+
+  {% if result and result.shared_artists %}
+    <h2>Artists you both listen to</h2>
+    <p class="small">
+      Exact — no estimate involved, and not affected by how much either of you
+      has listened.
+    </p>
+    <ul class="chips">
+      {% for artist in result.shared_artists %}<li>{{ artist }}</li>{% endfor %}
+    </ul>
+    {% if result.n_shared_artists and result.n_shared_artists > result.shared_artists|length %}
+      <p class="small">and {{ result.n_shared_artists - result.shared_artists|length }} more.</p>
+    {% endif %}
+  {% endif %}
+
+  {% if result and result.top_shared_genres %}
+    <h2>Where you overlap</h2>
+    <ul class="chips">
+      {% for genre in result.top_shared_genres %}<li>{{ genre }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if result and result.components %}
+    <h2>How close the music is</h2>
+    <p class="small">
+      Raw measures, not ranked against other pairs. Higher is more alike.
+    </p>
+    <table class="components">
+      {% for name, value in result.components.items() %}
+        <tr>
+          <th scope="row">{{ name.replace("_", " ") }}</th>
+          <td>
+            <span class="bar"><span class="bar__fill"
+              style="width: {{ (value * 100)|round|int if value <= 1 else 100 }}%"></span></span>
+          </td>
+          <td class="num">{{ "%.2f"|format(value) }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {{ zodiac(you) }}
+  {{ zodiac(them) }}
+
+  <h2>The one thing we are leaving out</h2>
+  <p class="small">
+    The percentile — &ldquo;more alike than 80% of pairs&rdquo;. That one is
+    ranked against pairs of a similar size, and below about
+    {{ result.min_required if result else 100 }} tracks it is biased by tens of
+    points in a direction neither of you could spot. A wrong answer there would
+    look exactly like a right one, so we would rather not print it.
+    Listen to a bit more and come back; everything above stays as it is.
+  </p>
+
+{% elif status == "unresolved" %}
+
+  <h1>We could not read that music</h1>
+  <p class="lead">{{ result.interpretation if result else
+     "We have no audio data for the tracks we found." }}</p>
+  <p class="small">
+    Our audio database was built before Spotify withdrew the endpoint that
+    produced it in November 2024, so nothing recorded since can be added.
+    Newer and more obscure music is simply missing, and that is a limit of
+    ours, not of your taste.
+  </p>
+
+  {% if result and result.tracks_read %}
+    <p class="small">
+      We read {{ result.tracks_read.inviter }} and {{ result.tracks_read.invited }}
+      tracks, and recognised
+      {{ result.tracks_resolved.inviter }} and {{ result.tracks_resolved.invited }}
+      of them.
+    </p>
+  {% endif %}
+
+  {# Whichever side did resolve still gets their summary. #}
+  {{ zodiac(you) }}
+  {{ zodiac(them) }}
+
+{% else %}
+
+  <h1>We could not finish the comparison</h1>
+  <p class="lead">
+    {{ result.interpretation if result else
+       "Something on our side went wrong while scoring this match." }}
+  </p>
+  <p class="small">Your data was not kept. Starting a new match is safe to try.</p>
+
+{% endif %}
+
+{% if is_participant and status == "complete" %}
+  <hr>
+  <h2>Share this result</h2>
+
+  {% if share_card_url %}
+    <p class="small">
+      This match is public. The link below shows your two names and the score
+      {%- if share_card_details %}, plus the artists and genres you share{% endif %}.
+      It does not let anyone join anything, and it is not the link you used
+      to invite each other.
+    </p>
+    <label class="copy-field">
+      <input type="text" readonly value="{{ share_card_url }}">
+    </label>
+    <div class="share-row">
+      <a class="button" href="{{ share_card_url }}">Open it</a>
+      {#
+        "New link" is the rotation Akin asked for: a link that has escaped
+        into a group chat cannot be recalled, so replacing it is the only
+        recall a bearer token can have. The old one stops working the
+        moment this is pressed.
+      #}
+      <form method="post" action="{{ url_for('share_match', match_id=match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if share_card_details %}<input type="hidden" name="include_details" value="on">{% endif %}
+        <button class="button" type="submit">Replace with a new link</button>
+      </form>
+      <form method="post" action="{{ url_for('unshare_match', match_id=match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="button" type="submit">Take it down</button>
+      </form>
+    </div>
+  {% else %}
+    <p class="small">
+      This result is private to the two of you. Publishing it creates a
+      separate, read-only link you can post anywhere — and you can replace or
+      delete that link later without affecting this page.
+    </p>
+    <form method="post" action="{{ url_for('share_match', match_id=match_id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="check">
+        <input type="checkbox" name="include_details">
+        Also show the artists and genres we have in common
+      </label>
+      <button class="button primary" type="submit">Create a public link</button>
+    </form>
+  {% endif %}
+
+  <p class="small">
+    Either of you can take a public link down, including one the other person
+    made. It affects this match only.
+  </p>
+{% endif %}
+
+{% if not is_participant %}
+  <p class="small">
+    You are viewing someone else's match through their link. Nothing here is
+    linked to your Spotify account.
+  </p>
+{% endif %}
+
+<a class="button primary" href="{{ url_for('home_page') }}">Start your own match</a>
+{% endblock %}

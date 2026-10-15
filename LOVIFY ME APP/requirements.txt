@@ -3,3 +3,21 @@ python-dotenv==1.0.0
 requests==2.32.3
 gunicorn==21.2.0
 Werkzeug==3.1.3
+
+# Server-side match state. Two people on two devices cannot share a cookie,
+# so what they share lives in a database: SQLite locally, Postgres in
+# deployment via DATABASE_URL.
+SQLAlchemy==2.0.36
+
+# Postgres driver. psycopg 3 to agree with requirements-app.txt, which the
+# container is built from -- two files disagreeing about the driver would
+# produce a deployment that works locally and fails on Railway.
+psycopg[binary]==3.2.3
+
+# Feature lookups come back as DataFrames because that is what lovify_ml
+# consumes. The ml package pins the version that matters.
+pandas>=2.2,<4
+
+# Tests are not listed here: this file is what Railway installs, and the
+# suite needs nothing but pytest. Run it with
+#     pip install pytest && python -m pytest "LOVIFY ME APP/tests"

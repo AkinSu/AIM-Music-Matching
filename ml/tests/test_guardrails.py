@@ -307,3 +307,65 @@ class ReviewRegressions(unittest.TestCase):
                 R.score_tracks(tracks, scaler, temperature=bad)
         ok = R.score_tracks(tracks, scaler, temperature=1.0)
         self.assertFalse(ok.isna().any().any())
+
+
+class HonestExplanations(unittest.TestCase):
+    """The results page must not claim an overlap the score says is zero.
+
+    Found by running the real trained model against two libraries pulled from
+    the seeded catalogue -- a metal/jazz listener and a pop/latin one. The
+    score was right (genre_overlap 0.0, no shared artists, percentile 0.0) and
+    the explanation was wrong: `top_shared_genres` still returned three
+    confident labels, which the results template renders under the heading
+    "Where you overlap". Two strangers were told they overlap on album rock.
+
+    The cause was `head(3)` on an all-zero sort: pandas is happy to return the
+    top three of nothing. Nine unit tests of `explain()` passed throughout,
+    because every one of them used users who did share a genre.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        rng = np.random.default_rng(3)
+        # Two users with deliberately disjoint genres, everything else alike.
+        rows = []
+        for user, genres in (("A", ["metal", "jazz"]), ("B", ["reggaeton", "k-pop"])):
+            for i in range(120):
+                rows.append({
+                    S.USER_ID: user,
+                    S.TRACK_ID: f"{user}{i}",
+                    "artist": f"{user}-artist-{i % 20}",
+                    "genre": genres[i % len(genres)],
+                    "year": 2010 + (i % 10),
+                    "popularity": int(rng.integers(20, 80)),
+                    **{f: float(rng.random()) for f in S.AUDIO_FEATURES},
+                })
+        cls.listens = pd.DataFrame(rows)
+        cls.scorer = SIM.CompatibilityScorer(cls.listens)
+        cls.scorer.fit_null(n_pairs=50, seed=1)
+
+    def test_no_shared_genres_means_no_genre_chips(self):
+        out = self.scorer.explain("A", "B")
+        self.assertEqual(out["components"]["genre_overlap"], 0.0)
+        self.assertEqual(
+            out["top_shared_genres"], [],
+            "explain() named genres as shared for two users whose genre "
+            "overlap is exactly 0 -- the results page renders these under "
+            '"Where you overlap"')
+
+    def test_genuinely_shared_genres_are_still_reported(self):
+        """The fix must not silence the honest case."""
+        both = self.listens.copy()
+        both.loc[both[S.USER_ID] == "B", "genre"] = "metal"
+        scorer = SIM.CompatibilityScorer(both)
+        scorer.fit_null(n_pairs=50, seed=1)
+        out = scorer.explain("A", "B")
+        self.assertGreater(out["components"]["genre_overlap"], 0.0)
+        self.assertIn("metal", out["top_shared_genres"])
+
+    def test_every_reported_genre_has_positive_weight_for_both(self):
+        """Stronger than the two above: no label may come from a one-sided taste."""
+        out = self.scorer.explain("A", "A")
+        gp = self.scorer.genre_profiles
+        for g in out["top_shared_genres"]:
+            self.assertGreater(gp.loc["A", g], 0.0)

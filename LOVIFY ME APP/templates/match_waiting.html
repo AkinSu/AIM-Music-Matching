@@ -1,0 +1,41 @@
+{% extends "_match_base.html" %}
+{% block title %}Waiting for your match{% endblock %}
+{% block content %}
+  <h1>Send this link to someone</h1>
+
+  <p class="lead">
+    They open it, sign in with Spotify, and you will both see how your
+    listening compares.
+  </p>
+
+  {#
+    `copy-field` rather than a hand-rolled row: static/lovify.js attaches
+    the select-on-tap and the copy button to every one of these. The inline
+    onclick that used to live here is blocked by the content security
+    policy, and correctly so -- the same rule stops injected script.
+  #}
+  <label class="copy-field link-row">
+    <input type="text" id="share-url" value="{{ share_url }}" readonly>
+  </label>
+
+  <p class="small">
+    This is a private invitation, not a link to post. It lets whoever opens
+    it take a seat in your match. There is a separate, public link for
+    sharing a finished result.
+  </p>
+
+  {% if you %}
+    <div class="person">
+      {% if you.user_photo %}<img src="{{ you.user_photo }}" alt="">{% endif %}
+      <div>
+        <strong>{{ you.user_name }}</strong>
+        <span class="small">{{ you.n_tracks }} top tracks read</span>
+      </div>
+    </div>
+  {% endif %}
+
+  <p class="small">
+    Nobody has joined yet. This page updates when they do — refresh after they
+    tell you they are done. The link works for 7 days.
+  </p>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "_match_base.html" %}
+{% block title %}{{ inviter_name }} wants to compare music taste{% endblock %}
+{% block content %}
+  <h1>{{ inviter_name }} wants to see how your music taste compares</h1>
+
+  <p class="lead">
+    To work this out we need to look at the songs you have listened to most
+    this month. Signing in with Spotify lets us read that, and nothing else.
+  </p>
+
+  <ul class="plain-facts">
+    <li>We read your top tracks once, right now.</li>
+    <li>We do not store your Spotify password or any access token.</li>
+    <li>You can close this page and nothing is kept.</li>
+  </ul>
+
+  <a class="button primary" href="{{ url_for('join_match', match_id=match_id) }}">
+    Continue with Spotify
+  </a>
+
+  <p class="small">
+    Both of you will see the result once you are done.
+  </p>
+{% endblock %}
