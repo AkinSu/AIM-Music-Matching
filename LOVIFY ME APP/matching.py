@@ -159,11 +159,16 @@ def score_match(db, match: Match, scorer=None, self_match: bool = False) -> dict
     def _taste() -> dict:
         """Zodiac summaries, or empty if this scorer does not do them.
 
-        getattr rather than a direct call: the taste summary is a bonus on
-        top of the score, and a scorer that cannot produce one must not be
-        able to take down a results page that has a real number on it.
+        taste_summary(), not taste_profile(): the summary enforces the
+        measured 75-track floor for naming a headline sign and the 30-track
+        floor for showing a blend at all. The raw profile names a sign at any
+        size, which for a 15-track library is noise with a label on it.
+
+        getattr rather than a direct call: the summary is a bonus on top of
+        the score, and a scorer that cannot produce one must not be able to
+        take down a results page that has a real number on it.
         """
-        f = getattr(scorer, "taste_profile", None)
+        f = getattr(scorer, "taste_summary", None)
         if f is None:
             return {}
         return {"inviter": f(frame_a), "invited": f(frame_b)}

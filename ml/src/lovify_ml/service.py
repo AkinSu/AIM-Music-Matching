@@ -11,9 +11,13 @@ assembles the pieces the notebooks validated.
 
     # inside the Flask app
     models = LovifyModels.load("artifacts/lovify_models.joblib")
-    models.taste_profile(user_tracks)
+    models.taste_summary(user_tracks)          # the results page's zodiac panel
     models.compatibility(user_a_tracks, user_b_tracks)
     models.recommend(user_tracks, n=10)
+
+Call `taste_summary()` rather than `taste_profile()` from the app. The two
+compute the same thing; the summary is the one that knows how big the library
+was and refuses to crown a headline sign that a second sample would overturn.
 """
 
 from __future__ import annotations
@@ -311,13 +315,131 @@ class LovifyModels:
             "distinctive_threshold": round(float(self.distinctive_threshold), 3),
         }
 
+    def stability_at(self, n_tracks: int) -> float | None:
+        """Measured chance that a second sample of this size agrees on the sign.
+
+        Steps down to the nearest measured rung at or below n_tracks, so the
+        figure quoted is never better than one we actually ran. Above the top
+        rung it returns the top rung: the curve is still climbing at 150 and
+        pretending to extrapolate it would be inventing a number.
+        """
+        rungs = [s for s in self.HEADLINE_STABILITY if s <= n_tracks]
+        if not rungs:
+            return None
+        return self.HEADLINE_STABILITY[max(rungs)]
+
+    def taste_summary(self, tracks: pd.DataFrame) -> dict:
+        """The zodiac feature for the results page, sized to the library.
+
+        `taste_profile()` always names a headline sign. On a 20-track library
+        that sign is noise: a different 20 tracks from the same person picks a
+        different one 58% of the time (see HEADLINE_STABILITY). This method is
+        the same computation with the library size taken seriously.
+
+        It never refuses. It returns the most it can honestly say and labels
+        how much that is, so a dormant account gets a smaller answer rather
+        than an error page.
+
+        The payload is built so the UI cannot over-claim by accident: when
+        `show_headline` is False there IS no `headline_sign` to render, and
+        when `show_mix` is False `mix`, `lift` and `top_signs` are empty. The
+        caller switches on two booleans and prints `caveat`; it makes no
+        judgement of its own.
+
+            {
+              "n_tracks": 42,
+              "confidence": "low",          # "none" | "low" | "ok"
+              "show_headline": False,
+              "show_mix": True,
+              "headline_sign": None,        # str when show_headline
+              "headline_lift": None,        # float when show_headline
+              "mix":  {sign: share, ...},   # 12 signs, sums to 1
+              "lift": {sign: ratio, ...},   # share / population base rate
+              "top_signs": [{"sign", "share", "lift"}, ...],   # up to 3
+              "is_distinctive": False,
+              "distinctive_threshold": 1.267,
+              "stability": 0.51,            # measured, None below 10 tracks
+              "min_tracks_for_headline": 75,
+              "caveat": "<one plain sentence>",
+            }
+        """
+        n = int(len(tracks))
+        empty = {
+            "n_tracks": n,
+            "confidence": "none",
+            "show_headline": False,
+            "show_mix": False,
+            "headline_sign": None,
+            "headline_lift": None,
+            "mix": {},
+            "lift": {},
+            "top_signs": [],
+            "is_distinctive": False,
+            "distinctive_threshold": round(float(self.distinctive_threshold), 3),
+            "stability": self.stability_at(n),
+            "min_tracks_for_headline": self.MIN_TRACKS_FOR_HEADLINE,
+            "caveat": "",
+        }
+
+        if n == 0:
+            empty["caveat"] = (
+                "We could not match any of your tracks to our audio library, "
+                "so there is nothing to summarise yet.")
+            return empty
+
+        if n < self.MIN_TRACKS_FOR_MIX:
+            empty["caveat"] = (
+                f"We found {n} tracks, which is too few to describe your taste "
+                "-- a different handful of your songs would usually point "
+                "somewhere else entirely.")
+            return empty
+
+        prof = self.taste_profile(tracks)
+        mix, lift = prof["mix"], prof["lift"]
+        top_signs = [{"sign": s, "share": mix[s], "lift": lift[s]}
+                     for s in list(lift)[:3]]
+        out = dict(empty)
+        out.update(show_mix=True, mix=mix, lift=lift, top_signs=top_signs)
+
+        if n < self.MIN_TRACKS_FOR_HEADLINE:
+            out["confidence"] = "low"
+            out["caveat"] = (
+                f"Based on only {n} tracks, so this is a rough blend -- we are "
+                "not confident enough to name a single top sign yet.")
+            return out
+
+        out.update(
+            confidence="ok",
+            show_headline=True,
+            headline_sign=prof["headline_sign"],
+            headline_lift=prof["headline_lift"],
+            # Only reportable where the headline is. Measured on the same
+            # resamples: the badge fires for 80% of 10-track libraries against
+            # 53% of 100-track ones, so below the floor it is mostly an
+            # artefact of taking the largest of twelve noisy ratios.
+            is_distinctive=prof["is_distinctive"],
+        )
+        out["caveat"] = (
+            f"Based on {n} tracks, this describes the music you listen to "
+            "rather than your actual star sign.")
+        return out
+
     def compatibility(self, tracks_a: pd.DataFrame, tracks_b: pd.DataFrame) -> dict:
         """Score two users against each other, calibrated against random pairs.
 
-        Refuses to return a percentile when either library is too small to
-        support one. That refusal is the feature: the alternative is not a
-        slightly noisier number, it is a confidently wrong one, biased
-        downward by tens of points in a direction the user cannot detect.
+        Withholds the PERCENTILE, and only the percentile, when either library
+        is too small to support one. That part is genuinely unreportable: the
+        alternative is not a slightly noisier number, it is a confidently
+        wrong one, biased downward by tens of points in a direction the user
+        cannot detect.
+
+        Everything else survives any library size, because everything else is
+        an exact overlap rather than a calibrated statistic -- shared artists,
+        shared genres, the five components. An earlier version withheld those
+        too, so a dormant account got a near-empty results page that read as
+        "we found nothing in common" when the truth was "we declined to say".
+        All three branches now return the SAME key set, so the web app renders
+        one layout and switches on `status` and on `percentile is None`.
         """
         a = tracks_a.copy(); a[S.USER_ID] = "A"
         b = tracks_b.copy(); b[S.USER_ID] = "B"
@@ -335,12 +457,16 @@ class LovifyModels:
         if not n_a or not n_b:
             return {
                 "percentile": None,
+                "raw_score": None,
                 "status": "no_resolvable_tracks",
                 "tracks": {"a": n_a, "b": n_b},
                 "min_required": self.min_library_tracks,
+                "effective_pair_size": 0,
+                "null_size_used": None,
                 "components": {},
                 "shared_artists": [],
                 "n_shared_artists": 0,
+                "top_shared_genres": [],
                 "interpretation": (
                     "We could not resolve any of "
                     f"{'your' if not n_a else 'their'} tracks, so there is "
@@ -352,32 +478,58 @@ class LovifyModels:
         pair = pd.concat([a, b], ignore_index=True)
         scorer = SIMm.CompatibilityScorer(pair, self.blend_weights,
                                           scaler=self.scaler, catalog=self.catalog)
+        eff = self.pair_size(n_a, n_b)
 
         if smaller < self.min_library_tracks:
-            comp = scorer.components("A", "B")
-            return {
-                "percentile": None,
-                "status": "insufficient_library",
-                "tracks": {"a": n_a, "b": n_b},
-                "min_required": self.min_library_tracks,
-                "components": {k: round(v, 4) for k, v in comp.items()},
-                "shared_artists": sorted(scorer.artist_sets["A"] & scorer.artist_sets["B"])[:5],
-                "interpretation": (
-                    f"Not enough listening history to score this fairly yet "
-                    f"({smaller} tracks; {self.min_library_tracks} needed). "
-                    "Shared artists are still shown below -- those are exact."
-                ),
-            }
+            out = scorer.evidence("A", "B", top_artists=self.SHARED_ARTISTS_SHOWN)
+            out.update(
+                percentile=None,
+                status="insufficient_library",
+                tracks={"a": n_a, "b": n_b},
+                min_required=self.min_library_tracks,
+                effective_pair_size=eff,
+                # No rung of the ladder was consulted, because no percentile
+                # was produced. Saying which one we would have used invites
+                # the UI to imply a calibration that did not happen.
+                null_size_used=None,
+            )
+            shown = len(out["shared_artists"])
+            total = out["n_shared_artists"]
+            # "unknown" is a real value in the catalogue -- the scrape carries
+            # no genre for most tracks -- and "you both listen to unknown" is
+            # the kind of sentence that makes a product look broken. Drop the
+            # placeholder from the PROSE only; top_shared_genres still
+            # reports it, because it is what the data says.
+            named = [g for g in out["top_shared_genres"]
+                     if g and str(g).strip().lower() not in {"unknown", "other", "n/a"}]
+            if total:
+                lead = (f"You have {total} artist{'s' if total != 1 else ''} in "
+                        f"common" + (f", {shown} of them shown below" if shown < total else "")
+                        + ", and those are exact counts whatever the library size.")
+            elif named:
+                lead = ("You have no artists in common, but you do both listen to "
+                        f"{' and '.join(named[:2])}, and that is exact whatever "
+                        "the library size.")
+            else:
+                lead = ("Here is everything we can count exactly from the "
+                        "music we could read on both accounts.")
+            out["interpretation"] = (
+                lead + " We are holding back the overall match percentage until "
+                f"both libraries reach {self.min_library_tracks} tracks "
+                f"(the smaller one has {smaller}), because below that it reads "
+                "far lower than it should."
+            )
+            return out
 
-        null = self._null_for(self.pair_size(n_a, n_b))
+        null = self._null_for(eff)
         if null is None:
             raise RuntimeError("no null distribution fitted; call fit() with listens")
         scorer._null = null
 
-        out = scorer.explain("A", "B")
+        out = scorer.explain("A", "B", top_artists=self.SHARED_ARTISTS_SHOWN)
         out["status"] = "ok"
         out["tracks"] = {"a": n_a, "b": n_b}
-        eff = self.pair_size(n_a, n_b)
+        out["min_required"] = self.min_library_tracks
         out["effective_pair_size"] = eff
         out["null_size_used"] = min(self.null_ladder, key=lambda s: abs(s - eff))
         out["interpretation"] = _phrase(out["percentile"])

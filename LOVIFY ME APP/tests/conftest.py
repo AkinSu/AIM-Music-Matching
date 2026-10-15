@@ -68,26 +68,40 @@ class StubScorer:
         self.ready = ready
         self.calls = 0
 
-    def taste_profile(self, tracks) -> dict | None:
-        """Shaped exactly like LovifyModels.taste_profile().
+    # Mirrors LovifyModels.taste_summary(), including the measured floors.
+    # A stub that always names a sign would hide exactly the bug this
+    # feature exists to avoid: a confident headline on a 15-track library.
+    MIN_TRACKS_FOR_HEADLINE = 75
+    MIN_TRACKS_FOR_MIX = 30
 
-        Deliberately returns an is_distinctive=False profile for a thin
-        library, because the hedged wording is the half of this feature most
-        likely to be got wrong and least likely to be looked at.
-        """
+    def taste_summary(self, tracks) -> dict:
         n = len(tracks)
-        if not n:
-            return None
-        distinctive = n >= 100
+        show_mix = n >= self.MIN_TRACKS_FOR_MIX
+        show_headline = n >= self.MIN_TRACKS_FOR_HEADLINE
+        lift = {"Scorpio": 1.69, "Pisces": 1.42, "Virgo": 1.16,
+                "Leo": 0.97, "Aries": 0.86}
         return {
-            "mix": {"Scorpio": 0.141, "Pisces": 0.118, "Virgo": 0.097,
-                    "Leo": 0.081, "Aries": 0.072},
-            "lift": {"Scorpio": 1.69, "Pisces": 1.42, "Virgo": 1.16,
-                     "Leo": 0.97, "Aries": 0.86},
-            "headline_sign": "Scorpio",
-            "headline_lift": 1.69 if distinctive else 1.08,
-            "is_distinctive": distinctive,
-            "distinctive_threshold": 1.25,
+            "n_tracks": n,
+            "confidence": "ok" if show_headline else ("low" if show_mix else "none"),
+            "show_headline": show_headline,
+            "show_mix": show_mix,
+            "headline_sign": "Scorpio" if show_headline else None,
+            "headline_lift": 1.69 if show_headline else None,
+            "mix": {"Scorpio": 0.141, "Pisces": 0.118} if show_mix else {},
+            "lift": lift if show_mix else {},
+            "top_signs": [] if not show_mix else [
+                {"sign": "Scorpio", "share": 0.141, "lift": 1.69}],
+            "is_distinctive": show_headline,
+            "distinctive_threshold": 1.267,
+            "stability": 0.65 if show_headline else None,
+            "min_tracks_for_headline": self.MIN_TRACKS_FOR_HEADLINE,
+            "caveat": (
+                f"Based on {n} tracks, this describes the music you listen to "
+                "rather than your actual star sign." if show_headline else
+                f"Based on only {n} tracks, so this is a rough blend -- we are "
+                "not confident enough to name a single top sign yet."
+                if show_mix else
+                f"We found {n} tracks, which is too few to describe your taste."),
         }
 
     def compatibility(self, tracks_a, tracks_b) -> dict:

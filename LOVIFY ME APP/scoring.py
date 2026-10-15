@@ -111,7 +111,19 @@ class Scorer:
         return self.models.compatibility(tracks_a, tracks_b)
 
     def taste_profile(self, tracks) -> dict | None:
+        """Deprecated here. Use taste_summary(); this remains for callers
+        outside the web app (notebooks) that still want the raw profile."""
+        return self._taste(tracks, "taste_profile")
+
+    def taste_summary(self, tracks) -> dict | None:
         """One person's zodiac taste summary, or None if unavailable.
+
+        taste_summary() rather than taste_profile() because the floor is
+        measured, not assumed: below 75 tracks a second sample of the same
+        person's own library overturns the headline sign more than 40% of the
+        time, so the summary refuses to name one and says why. The payload is
+        shaped so this page cannot over-claim by ignoring a flag -- when
+        show_headline is false there is no sign in the dict to render.
 
         The whole zodiac result of this project lives behind this call and
         was never wired to a page. It is a *summary*, not a prediction: the
@@ -125,14 +137,22 @@ class Scorer:
         must never take down a results page that has a real compatibility
         score on it.
         """
-        if not self.ready or tracks is None or not len(tracks):
+        return self._taste(tracks, "taste_summary")
+
+    def _taste(self, tracks, method: str) -> dict | None:
+        """Shared guard. Never raises; a missing summary must not take down a
+        results page that has a real compatibility score on it."""
+        if not self.ready or tracks is None:
+            return None
+        fn = getattr(self.models, method, None)
+        if fn is None:
             return None
         try:
-            return self.models.taste_profile(tracks)
+            return fn(tracks)
         except Exception:                       # pragma: no cover - defensive
             import logging
             logging.getLogger(__name__).warning(
-                "taste_profile failed; the page renders without it", exc_info=True)
+                "%s failed; the page renders without it", method, exc_info=True)
             return None
 
 

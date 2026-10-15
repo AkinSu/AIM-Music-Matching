@@ -54,9 +54,16 @@ class TestZodiacOnThePage:
 
     def test_it_says_this_is_about_music_not_birthdays(self, page):
         """The measured result is 1.39x chance. The page must not imply more."""
-        low = page.lower()
-        assert "not a guess at a birthday" in low or "guess at a birthday" in low
+        low = " ".join(page.lower().split())
+        assert "rather than your actual star sign" in low
         assert "average listener" in low
+
+    def test_it_admits_how_unstable_the_headline_is(self, page):
+        """Two halves of the same person's library agree on the top sign only
+        about 65% of the time at 100 tracks. Say so where the sign is shown."""
+        low = " ".join(page.lower().split())
+        assert "65% of the time" in low
+        assert "treat it loosely" in low
 
     def test_it_never_claims_to_know_your_sign(self, page):
         low = page.lower()
@@ -64,13 +71,34 @@ class TestZodiacOnThePage:
             assert claim not in low
 
 
-class TestWeakSignalIsShownAsWeak:
-    def test_a_thin_library_gets_hedged_wording(self, app, spotify, db):
+class TestTheMeasuredFloors:
+    """taste_summary() refuses to name a sign below 75 tracks, and refuses to
+    show a blend at all below 30. Both numbers came from splitting real
+    libraries in half and counting how often the two halves disagreed."""
+
+    def _body(self, app, spotify, db, n):
         one, _, mid = _pair(app, spotify, db,
-                            track_ids("x", THIN), track_ids("x", THIN) + track_ids("y", 5))
-        body = one.get(f"/m/{mid}").get_data(as_text=True)
-        assert "but only just" in body
-        assert "invent a personality" in body
+                            track_ids("x", n), track_ids("x", n) + track_ids("y", 5))
+        return " ".join(one.get(f"/m/{mid}").get_data(as_text=True).split())
+
+    def test_under_thirty_tracks_shows_no_signs_at_all(self, app, spotify, db):
+        body = self._body(app, spotify, db, 20)
+        assert "too few to describe your taste" in body
+        for sign in ("Scorpio", "Pisces", "Virgo"):
+            assert sign not in body, "a sign leaked onto a 20-track library"
+
+    def test_between_thirty_and_seventy_five_shows_a_blend_but_no_leader(
+            self, app, spotify, db):
+        body = self._body(app, spotify, db, 40)
+        assert "no clear leader" in body
+        assert "not confident enough to name a single top sign" in body
+        assert "Scorpio" in body, "the blend itself is still worth showing"
+
+    def test_above_the_floor_names_a_sign(self, app, spotify, db):
+        body = self._body(app, spotify, db, 100)
+        assert "no clear leader" not in body
+        assert "Scorpio" in body
+        assert "1.69" in body
 
 
 # ── thin libraries get an answer, not a refusal ──────────────────────────────

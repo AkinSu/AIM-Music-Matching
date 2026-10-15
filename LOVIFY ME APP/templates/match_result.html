@@ -4,58 +4,71 @@
 {#
   The zodiac summary, for one person.
 
-  Framing matters more than layout here. This project MEASURED how well a
-  birth sign can be predicted from audio: 1.39x chance, below the threshold
-  it pre-registered as "dead". So this is never a guess at someone's real
-  sign. It is "your listening leans Scorpio-ish compared with an average
-  listener", with the lift printed, which is what the numbers support.
+  Framing is the design problem here, not layout. This project MEASURED two
+  things and the block is built around both:
 
-  When the top lift is not meaningfully above the population baseline, the
-  model says so (is_distinctive=false) and this says so too, rather than
-  dressing noise up as a personality.
+  1. Predicting a real birth sign from audio runs at 1.39x chance, which the
+     project pre-registered as dead. So this is never a guess at someone's
+     sign. It is "your listening leans Scorpio-ish", with the lift printed.
+
+  2. The headline sign is UNSTABLE on small libraries. Splitting one real
+     person's library in half and scoring each half separately gives a
+     different top sign 40% of the time at 75 tracks, and 68% of the time at
+     10. Two samples from two DIFFERENT random listeners already agree 44%
+     of the time, because the model has favourite signs.
+
+  So the template never decides what is safe to show. taste_summary() sets
+  show_headline / show_mix from measured floors, and when show_headline is
+  false there is no sign in the payload to render even by accident.
 #}
 {% macro zodiac(person) %}
   {% set t = person.taste %}
   {% if t %}
-    <div class="zodiac">
+    <div class="zodiac zodiac--{{ t.confidence }}">
       <h3>{{ person.user_name or "They" }}&rsquo;s listening leans</h3>
 
-      {% if t.is_distinctive %}
+      {% if t.show_headline %}
         <p class="zodiac__headline">
           <strong>{{ t.headline_sign }}</strong>
           <span class="zodiac__lift">{{ t.headline_lift }}&times; an average listener</span>
         </p>
-      {% else %}
+      {% elif t.show_mix %}
         <p class="zodiac__headline zodiac__headline--weak">
-          <strong>{{ t.headline_sign }}</strong>, but only just
-          <span class="zodiac__lift">{{ t.headline_lift }}&times; chance</span>
-        </p>
-        <p class="small">
-          That is not far enough above an average listener to mean much. We
-          would rather say so than invent a personality for you.
+          A rough blend, with no clear leader
         </p>
       {% endif %}
 
-      <ul class="zodiac__bars">
-        {% for sign, value in t.lift.items() %}
-          {% if loop.index <= 5 %}
-            <li>
-              <span class="zodiac__sign">{{ sign }}</span>
-              <span class="bar"><span class="bar__fill{{ ' bar__fill--weak' if value < t.distinctive_threshold }}"
-                style="width: {{ ((value / 2.5) * 100)|round|int if value < 2.5 else 100 }}%"></span></span>
-              <span class="num">{{ "%.2f"|format(value) }}&times;</span>
-            </li>
-          {% endif %}
-        {% endfor %}
-      </ul>
+      {% if t.show_mix %}
+        <ul class="zodiac__bars">
+          {% for sign, value in t.lift.items() %}
+            {% if loop.index <= 5 %}
+              <li>
+                <span class="zodiac__sign">{{ sign }}</span>
+                <span class="bar"><span class="bar__fill{{ ' bar__fill--weak' if not t.show_headline }}"
+                  style="width: {{ ((value / 2.5) * 100)|round|int if value < 2.5 else 100 }}%"></span></span>
+                <span class="num">{{ "%.2f"|format(value) }}&times;</span>
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+      {% endif %}
 
-      <p class="small">
-        These are <em>lifts</em>: how much more of this sign&rsquo;s playlist
-        sound is in this library than in an average one. 1.00&times; is
-        ordinary. It is a description of music, not a guess at a birthday —
-        we measured that, and audio predicts a real birth sign barely better
-        than chance.
-      </p>
+      {# Written by the model, not by this page, so the wording cannot drift
+         away from the number it is describing. #}
+      <p class="small">{{ t.caveat }}</p>
+
+      {% if t.show_mix %}
+        <p class="small">
+          These are <em>lifts</em>: how much more of this sign&rsquo;s playlist
+          sound is in this library than in an average one. 1.00&times; is
+          ordinary.
+          {%- if t.stability %}
+          Two different halves of the same person&rsquo;s library agree on the
+          top sign about {{ (t.stability * 100)|round|int }}% of the time at
+          this size, so treat it loosely.
+          {%- endif %}
+        </p>
+      {% endif %}
     </div>
   {% endif %}
 {% endmacro %}
